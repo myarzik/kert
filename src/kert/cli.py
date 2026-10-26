@@ -76,6 +76,12 @@ def compile_command(
     )
 
 
+@app.command("read")
+def read_command(book: Annotated[Path, typer.Argument(metavar="BOOK")]) -> None:
+    """Read a compiled .kert book in the terminal."""
+    raise NotImplementedError
+
+
 @app.command("inspect")
 def inspect_command(
     book: Annotated[Path, typer.Argument(metavar="BOOK")],

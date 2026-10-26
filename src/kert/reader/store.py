@@ -106,6 +106,14 @@ class BookStore:
                 (key, value),
             )
 
+    def log_advance(
+        self, ts: float, sentence_id: int, chunk_words: int, direction: int
+    ) -> None:
+        raise NotImplementedError
+
+    def trim_advance_log(self, keep: int) -> None:
+        raise NotImplementedError
+
     def close(self) -> None:
         # Fold the WAL back so the .kert stays a single portable file.
         self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")

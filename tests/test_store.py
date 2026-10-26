@@ -164,3 +164,56 @@ def test_missing_file_is_user_error_and_is_not_created(tmp_path):
         BookStore.open(path)
 
     assert not path.exists()
+
+
+# --- advance_log (§3, D5) ---------------------------------------------------------
+
+
+def advance_rows(path):
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute(
+            "SELECT ts, sentence_id, chunk_words, direction "
+            "FROM advance_log ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+@spacy
+def test_log_advance_appends_rows_in_order(book_path):
+    with BookStore.open(book_path) as s:
+        s.log_advance(ts=100.5, sentence_id=2, chunk_words=4, direction=1)
+        s.log_advance(ts=101.0, sentence_id=3, chunk_words=4, direction=-1)
+
+    assert advance_rows(book_path) == [(100.5, 2, 4, 1), (101.0, 3, 4, -1)]
+
+
+@spacy
+def test_trim_keeps_only_the_newest_rows(book_path):
+    with BookStore.open(book_path) as s:
+        for i in range(7):
+            s.log_advance(ts=float(i), sentence_id=1, chunk_words=i, direction=1)
+        s.trim_advance_log(keep=3)
+
+    assert [row[2] for row in advance_rows(book_path)] == [4, 5, 6]
+
+
+@spacy
+def test_trim_below_the_cap_keeps_everything(book_path):
+    with BookStore.open(book_path) as s:
+        s.log_advance(ts=1.0, sentence_id=1, chunk_words=2, direction=1)
+        s.trim_advance_log(keep=3)
+
+    assert len(advance_rows(book_path)) == 1
+
+
+@spacy
+def test_advance_log_writes_leave_content_tables_untouched(book_path):
+    before = content_digest(book_path)
+
+    with BookStore.open(book_path) as s:
+        s.log_advance(ts=1.0, sentence_id=1, chunk_words=2, direction=1)
+        s.trim_advance_log(keep=0)
+
+    assert content_digest(book_path) == before
