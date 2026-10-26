@@ -1,0 +1,49 @@
+[project]
+name = "kert"
+version = "0.1.0"
+description = "Terminal focus-reader: syntagma chunking with active-fragment highlighting"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "msgpack==1.2.3",
+    "platformdirs==4.13.5",
+    "readchar==4.2.2",
+    "rich==15.0.0",
+    "spacy==3.8.16",
+    "typer==0.27.3",
+]
+
+[project.scripts]
+kert = "kert.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10.9,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "spacy: requires pinned spaCy models (skipped locally if absent, mandatory in CI)",
+]
+
+[tool.uv.sources]
+ru-core-news-sm = { url = "https://github.com/explosion/spacy-models/releases/download/ru_core_news_sm-3.8.0/ru_core_news_sm-3.8.0-py3-none-any.whl" }
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "ruff==0.17.2",
+]
+models = [
+    "en-core-web-sm",
+    "ru-core-news-sm",
+]
