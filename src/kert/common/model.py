@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 BlockType = Literal["paragraph", "dialogue", "heading", "code", "list_item"]
+Lang = Literal["ru", "en"]
 
 
 @dataclass(frozen=True, slots=True)
