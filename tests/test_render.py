@@ -248,3 +248,35 @@ def test_status_shows_message():
 
 def test_status_percent_has_one_decimal():
     assert lines(state_at(Position(4, 5), (44, 12)))[-1] == status("81.8%")
+
+
+# --- Narrow terminal (task 10) --------------------------------------------------------
+
+NARROW = "Terminal too narrow: 40+ columns needed"
+
+
+def test_terminal_narrower_than_40_columns_shows_only_a_notice():
+    frame = lines(state_at(Position(2, 0), (39, 12)))
+
+    assert frame == [NARROW] + [""] * 11
+
+
+def test_notice_is_cropped_to_very_narrow_terminals():
+    frame = lines(state_at(Position(2, 0), (20, 5)))
+
+    assert frame == [NARROW[:20]] + [""] * 4
+
+
+def test_40_columns_renders_the_book():
+    frame = lines(state_at(Position(2, 0), (40, 12)))
+
+    assert NARROW not in frame
+    assert any("alpha" in line for line in frame)
+
+
+@pytest.mark.parametrize("settings", [DARK, LIGHT])
+def test_narrow_notice_uses_status_style(settings):
+    color = "grey50" if settings is DARK else "grey62"
+    state = state_at(Position(2, 0), (39, 12), settings)
+
+    assert style_of(state, "Terminal too narrow") == (color, False)

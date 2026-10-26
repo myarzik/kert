@@ -65,7 +65,13 @@ def close_session(store: BookStore, state: ReaderState) -> None:
         store.close()
 
 
-def run(path: Path) -> None:
+def run(
+    path: Path,
+    *,
+    read_key: Callable[[], str] | None = None,
+    console: object | None = None,
+    config_file: Path | None = None,
+) -> None:
     from rich.console import Console
     from rich.live import Live
 
