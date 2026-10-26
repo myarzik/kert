@@ -54,5 +54,6 @@ def test_chunk_span_fields():
 )
 def test_content_models_are_immutable(instance):
     # Content is write-never after compilation (D8).
+    first_field = dataclasses.fields(instance)[0].name
     with pytest.raises(dataclasses.FrozenInstanceError):
-        instance.id = 2  # type: ignore[misc]
+        setattr(instance, first_field, 2)
