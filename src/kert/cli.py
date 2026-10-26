@@ -24,5 +24,5 @@ def root(
     """Terminal focus-reader."""
 
 
-def main() -> None:
-    app()
+def main(argv: list[str] | None = None) -> int:
+    raise NotImplementedError
