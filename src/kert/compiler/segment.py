@@ -2,13 +2,20 @@ import spacy
 from spacy.language import Language
 from spacy.tokens import Span
 
+from kert.common.errors import KertError
 from kert.common.model import Lang
 
 MODELS: dict[Lang, str] = {"ru": "ru_core_news_sm", "en": "en_core_web_sm"}
 
 
 def load_model(lang: Lang) -> Language:
-    return spacy.load(MODELS[lang], disable=["ner", "lemmatizer"])
+    try:
+        return spacy.load(MODELS[lang], disable=["ner", "lemmatizer"])
+    except OSError as exc:
+        raise KertError(
+            f"spaCy model {MODELS[lang]!r} for --lang {lang} is not installed. "
+            "Install the pinned models with: uv sync --group models"
+        ) from exc
 
 
 def segment(nlp: Language, texts: list[str]) -> list[list[Span]]:

@@ -70,6 +70,10 @@ class BookStore:
                     "FROM sentences ORDER BY id"
                 )
             )
+        except (sqlite3.DatabaseError, ValueError, TypeError) as exc:
+            # Not SQLite, foreign tables, or undecodable msgpack blobs.
+            conn.close()
+            raise KertError(f"{path} is not a valid .kert file ({exc}).") from exc
         except BaseException:
             conn.close()
             raise

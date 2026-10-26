@@ -8,6 +8,8 @@ from rich.text import Text
 from kert.reader.state import ReaderState, block_range
 
 MAX_TEXT_WIDTH = 88
+MIN_COLUMNS = 40
+NARROW_NOTICE = f"Terminal too narrow: {MIN_COLUMNS}+ columns needed"
 MARKER = "…"
 
 
@@ -29,9 +31,12 @@ THEMES = {
 
 def build_frame(state: ReaderState) -> RenderableType:
     columns, rows = state.size
+    theme = THEMES[state.settings.theme]
+    if columns < MIN_COLUMNS:
+        notice = Text(NARROW_NOTICE[:columns], style=theme.status)
+        return Group(notice, *([Text()] * (rows - 1)))
     width = min(columns - 4, MAX_TEXT_WIDTH)
     margin = " " * ((columns - width) // 2)
-    theme = THEMES[state.settings.theme]
     height = rows - 1  # last row is the status line
 
     lines, first, last = _active_block(state, width, theme)
