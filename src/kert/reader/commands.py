@@ -1,9 +1,15 @@
+"""`:` command-line parser (spec §8.2). Values are validated, not applied."""
+
+import math
 from dataclasses import dataclass
+
+from kert.common.errors import KertError
+from kert.reader import config
 
 
 @dataclass(frozen=True, slots=True)
 class SetCommand:
-    key: str
+    key: str  # storage key (§3 reader_state), e.g. "chunk_width"
     value: str
 
 
@@ -19,6 +25,36 @@ class QuitCommand:
 
 Command = SetCommand | GotoCommand | QuitCommand
 
+_SET_KEYS = {"width": "chunk_width", "theme": "theme"}
+
 
 def parse_command(text: str) -> Command:
-    raise NotImplementedError
+    name, _, arg = text.strip().partition(" ")
+    arg = arg.strip()
+    if name == "q" and not arg:
+        return QuitCommand()
+    if name == "set":
+        return _parse_set(arg)
+    if name == "goto":
+        return _parse_goto(arg)
+    raise KertError(f"Unknown command: {text.strip()}")
+
+
+def _parse_set(arg: str) -> SetCommand:
+    name, eq, raw = arg.partition("=")
+    if not eq:
+        raise KertError("Usage: :set width=N | :set theme=dark|light")
+    key = _SET_KEYS.get(name.strip())
+    if key is None:
+        raise KertError(f"Unknown setting: {name.strip()}")
+    return SetCommand(key, config.validate(key, raw.strip()))
+
+
+def _parse_goto(arg: str) -> GotoCommand:
+    try:
+        percent = float(arg)
+    except ValueError:
+        raise KertError("Usage: :goto P (percent 0-100)") from None
+    if not (math.isfinite(percent) and 0.0 <= percent <= 100.0):
+        raise KertError("Usage: :goto P (percent 0-100)")
+    return GotoCommand(percent)

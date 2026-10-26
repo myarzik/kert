@@ -86,27 +86,26 @@ def resolve(book: SettingsStore, defaults: Settings) -> Settings:
 
 
 def validate(key: str, raw: str) -> str:
-    raise NotImplementedError
-
-
-def set_setting(
-    book: SettingsStore, key: str, raw: str, path: Path | None = None
-) -> None:
-    """Validate, then write `key` to the book and to the global TOML."""
+    """Normalized storage value for `key`, or KertError if it is invalid."""
     if key == "chunk_width":
         width = _parse_width(raw)
         if width is None:
             raise KertError(
                 f"chunk_width must be an integer {WIDTH_MIN}..{WIDTH_MAX}, got {raw!r}."
             )
-        value = str(width)
-    elif key == "theme":
+        return str(width)
+    if key == "theme":
         if _valid_theme(raw) is None:
             raise KertError(f"theme must be one of {', '.join(THEMES)}, got {raw!r}.")
-        value = raw
-    else:
-        raise KertError(f"Unknown setting {key!r}.")
+        return raw
+    raise KertError(f"Unknown setting {key!r}.")
 
+
+def set_setting(
+    book: SettingsStore, key: str, raw: str, path: Path | None = None
+) -> None:
+    """Validate, then write `key` to the book and to the global TOML."""
+    value = validate(key, raw)
     book.save_setting(key, value)
 
     path = path or config_path()
