@@ -2,12 +2,13 @@ import re
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from kert.common.errors import KertError
 from kert.common.model import Lang
 
 _BLANK_LINE = re.compile(r"^\s*$")
 
 
-class IngestError(Exception):
+class IngestError(KertError):
     pass
 
 

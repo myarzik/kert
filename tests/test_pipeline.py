@@ -35,8 +35,10 @@ def compiled(tmp_path_factory):
     require_model("ru_core_news_sm")
     out = tmp_path_factory.mktemp("compiled") / "book.kert"
     summary = compile_book(FIXTURE, out, "ru")
+    # Snapshot before connecting: reading a WAL database creates sidecars.
+    listing = sorted(p.name for p in out.parent.iterdir())
     conn = sqlite3.connect(out)
-    yield summary, conn, out
+    yield summary, conn, listing
     conn.close()
 
 
@@ -147,6 +149,6 @@ def test_mutable_tables_empty(compiled):
 
 
 def test_output_is_a_single_file(compiled):
-    _, _, out = compiled
+    _, _, listing = compiled
 
-    assert sorted(p.name for p in out.parent.iterdir()) == ["book.kert"]
+    assert listing == ["book.kert"]
