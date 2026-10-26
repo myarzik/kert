@@ -239,3 +239,26 @@ def test_set_and_resolve_against_real_book(book_path, toml):
         set_setting(store, "chunk_width", "11", toml)
     with BookStore.open(book_path) as store:
         assert resolve(store, HARDCODED) == Settings(chunk_width=11, theme="dark")
+
+
+# --- Shared value validation (used by :set) ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("key", "raw", "value"),
+    [
+        ("chunk_width", "5", "5"),
+        ("chunk_width", " 12", "12"),
+        ("theme", "light", "light"),
+    ],
+)
+def test_validate_normalizes_valid_values(key, raw, value):
+    assert config.validate(key, raw) == value
+
+
+@pytest.mark.parametrize(
+    ("key", "raw"), [("chunk_width", "4"), ("theme", "blue"), ("position", "1")]
+)
+def test_validate_rejects_invalid_values(key, raw):
+    with pytest.raises(KertError):
+        config.validate(key, raw)

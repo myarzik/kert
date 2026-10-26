@@ -85,6 +85,10 @@ def resolve(book: SettingsStore, defaults: Settings) -> Settings:
     )
 
 
+def validate(key: str, raw: str) -> str:
+    raise NotImplementedError
+
+
 def set_setting(
     book: SettingsStore, key: str, raw: str, path: Path | None = None
 ) -> None:

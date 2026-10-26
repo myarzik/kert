@@ -1,0 +1,250 @@
+import pytest
+from helpers import make_sentence, mini_book
+from readchar import key
+from rich.console import Console
+
+from kert.common.model import Block
+from kert.reader.config import Settings
+from kert.reader.render import build_frame
+from kert.reader.state import Book, handle_key, initial_state
+from kert.reader.store import Position
+
+DARK = Settings(chunk_width=5, theme="dark")
+LIGHT = Settings(chunk_width=5, theme="light")
+
+# mini_book at 44 columns: text width min(44-4, 88) = 40, left margin 2.
+B1 = "Глава один."
+B2 = ("alpha bravo charlie delta echo foxtrot", "golf hotel india. Short one.")
+B3 = ("one two three four five six seven eight", "nine.")
+
+
+def state_at(position, size, settings=DARK, book=None):
+    return initial_state(book or mini_book(), settings, position, size=size)
+
+
+def console_for(state):
+    width, height = state.size
+    return Console(
+        width=width,
+        height=height,
+        record=True,
+        force_terminal=True,
+        color_system="256",
+        legacy_windows=False,
+    )
+
+
+def lines(state):
+    console = console_for(state)
+    console.print(build_frame(state))
+    return [line.rstrip() for line in console.export_text().split("\n")[:-1]]
+
+
+def segments(state):
+    console = console_for(state)
+    return list(console.render(build_frame(state)))
+
+
+def style_of(state, text):
+    segment = next(s for s in segments(state) if text in s.text)
+    return segment.style.color.name, bool(segment.style.bold)
+
+
+def status(percent, left="", margin=2, width=40):
+    return " " * margin + left + " " * (width - len(left) - len(percent)) + percent
+
+
+# --- Layout (§7.1) --------------------------------------------------------------------
+
+
+def test_active_block_centered_with_both_neighbors():
+    assert lines(state_at(Position(2, 0), (44, 12))) == [
+        "",
+        "",
+        f"  {B1}",
+        "",
+        f"  {B2[0]}",
+        f"  {B2[1]}",
+        "",
+        f"  {B3[0]}",
+        f"  {B3[1]}",
+        "",
+        "",
+        status("9.1%"),  # 2 / 22 words
+    ]
+
+
+def test_neighbors_that_exactly_fit_are_shown():
+    # 7 content rows: 2 active, 2 above, 3 below.
+    assert lines(state_at(Position(2, 0), (44, 8))) == [
+        f"  {B1}",
+        "",
+        f"  {B2[0]}",
+        f"  {B2[1]}",
+        "",
+        f"  {B3[0]}",
+        f"  {B3[1]}",
+        status("9.1%"),
+    ]
+
+
+def test_neighbor_that_does_not_fit_is_dropped_whole():
+    # 6 content rows: 2 above fits the 1-line B1, 2 below cannot hold B3.
+    assert lines(state_at(Position(2, 0), (44, 7))) == [
+        f"  {B1}",
+        "",
+        f"  {B2[0]}",
+        f"  {B2[1]}",
+        "",
+        "",
+        status("9.1%"),
+    ]
+
+
+def test_tight_space_drops_both_neighbors():
+    assert lines(state_at(Position(2, 0), (44, 6))) == [
+        "",
+        f"  {B2[0]}",
+        f"  {B2[1]}",
+        "",
+        "",
+        status("9.1%"),
+    ]
+
+
+def test_first_block_has_no_upper_neighbor():
+    assert lines(state_at(Position(1, 0), (44, 12))) == [
+        "",
+        "",
+        "",
+        "",
+        "",
+        f"  {B1}",
+        "",
+        f"  {B2[0]}",
+        f"  {B2[1]}",
+        "",
+        "",
+        status("0.0%"),
+    ]
+
+
+def test_text_width_is_capped_at_88_and_centered():
+    frame = lines(state_at(Position(2, 0), (120, 12)))
+
+    assert f"{' ' * 16}{B2[0]} {B2[1]}" in frame
+    assert frame[-1] == status("9.1%", margin=16, width=88)
+
+
+def test_frame_fills_terminal_height():
+    assert len(lines(state_at(Position(4, 5), (44, 20)))) == 20
+
+
+# --- Tall-block clipping (§7.1) -------------------------------------------------------
+
+TALL_WORDS = ("alpha", "gamma", "kappa", "omega", "sigma", "theta", "zetas", "betas")
+TALL = [f"{w} bravo charlie delta echo golf." for w in TALL_WORDS]  # 36 chars
+
+
+def tall_book():
+    # One 8-line block (each 36-char sentence fills a 40-col line) + a neighbor.
+    return Book(
+        blocks=(Block(1, "paragraph"), Block(2, "paragraph")),
+        sentences=(
+            *(make_sentence(i + 1, 1, i, text) for i, text in enumerate(TALL)),
+            make_sentence(9, 2, 0, "Short one."),
+        ),
+        word_count=50,
+    )
+
+
+def tall_at(sentence_id):
+    return state_at(Position(sentence_id, 0), (44, 6), book=tall_book())
+
+
+def test_tall_block_at_top_marks_only_bottom_edge():
+    assert lines(tall_at(1))[:-1] == [f"  {t}" for t in TALL[:4]] + ["  …"]
+
+
+def test_tall_block_in_middle_marks_both_edges():
+    assert lines(tall_at(5))[:-1] == ["  …", *(f"  {t}" for t in TALL[3:6]), "  …"]
+
+
+def test_tall_block_at_bottom_marks_only_top_edge():
+    assert lines(tall_at(8))[:-1] == ["  …", *(f"  {t}" for t in TALL[4:])]
+
+
+@pytest.mark.parametrize("sentence_id", range(1, 9))
+def test_active_chunk_always_visible_in_tall_block(sentence_id):
+    state = tall_at(sentence_id)
+
+    assert style_of(state, TALL[sentence_id - 1]) == ("white", True)
+
+
+# --- Styles (§7.2) --------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("settings", "active", "rest", "neighbor", "status_color"),
+    [
+        (DARK, "white", "grey50", "grey35", "grey50"),
+        (LIGHT, "black", "grey62", "grey74", "grey62"),
+    ],
+)
+def test_theme_presets(settings, active, rest, neighbor, status_color):
+    state = state_at(Position(2, 0), (44, 12), settings)
+
+    assert style_of(state, "alpha bravo charlie delta echo") == (active, True)
+    assert style_of(state, "foxtrot") == (rest, False)
+    assert style_of(state, "golf hotel india. Short one.") == (rest, False)
+    assert style_of(state, B1) == (neighbor, False)
+    assert style_of(state, B3[0]) == (neighbor, False)
+    assert style_of(state, "9.1%") == (status_color, False)
+
+
+@pytest.mark.parametrize(("settings", "color"), [(DARK, "grey35"), (LIGHT, "grey74")])
+def test_truncation_marker_style(settings, color):
+    state = state_at(Position(5, 0), (44, 6), settings, book=tall_book())
+
+    assert style_of(state, "…") == (color, False)
+
+
+def test_active_chunk_spanning_a_line_break_is_styled_on_both_lines():
+    state = state_at(Position(2, 0), (44, 12), Settings(chunk_width=8, theme="dark"))
+
+    assert style_of(state, B2[0]) == ("white", True)
+    assert style_of(state, "golf hotel india.") == ("white", True)
+    assert style_of(state, "Short one.") == ("grey50", False)
+
+
+@pytest.mark.parametrize("settings", [DARK, LIGHT])
+def test_no_dim_attribute_anywhere(settings):
+    for state in (
+        state_at(Position(2, 0), (44, 12), settings),
+        state_at(Position(5, 0), (44, 6), settings, book=tall_book()),
+    ):
+        assert not any(s.style and s.style.dim for s in segments(state))
+
+
+# --- Status line (§7.1) ---------------------------------------------------------------
+
+
+def test_status_shows_command_input():
+    state = state_at(Position(2, 0), (44, 12))
+    for k in ":set wi":
+        state = handle_key(state, k)
+
+    assert lines(state)[-1] == status("9.1%", left=":set wi")
+    assert style_of(state, ":set wi") == ("grey50", False)
+
+
+def test_status_shows_message():
+    state = state_at(Position(2, 0), (44, 12))
+    for k in [":", "f", "o", "o", key.ENTER]:
+        state = handle_key(state, k)
+
+    assert lines(state)[-1] == status("9.1%", left=state.message)
+
+
+def test_status_percent_has_one_decimal():
+    assert lines(state_at(Position(4, 5), (44, 12)))[-1] == status("81.8%")
