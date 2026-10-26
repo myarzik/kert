@@ -1,3 +1,4 @@
+import sys
 from enum import StrEnum
 from importlib.metadata import version
 from pathlib import Path
@@ -79,7 +80,9 @@ def compile_command(
 @app.command("read")
 def read_command(book: Annotated[Path, typer.Argument(metavar="BOOK")]) -> None:
     """Read a compiled .kert book in the terminal."""
-    raise NotImplementedError
+    from kert.reader import app as reader_app
+
+    reader_app.run(book)
 
 
 @app.command("inspect")
@@ -104,6 +107,10 @@ def inspect_command(
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point; maps outcomes to exit codes (spec §9)."""
+    for stream in (sys.stdout, sys.stderr):  # §7.3: Windows consoles
+        encoding = (getattr(stream, "encoding", None) or "").lower()
+        if encoding not in ("utf-8", "utf8") and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     try:
         code = app(args=argv, prog_name="kert", standalone_mode=False)
     except typer.TyperException as exc:  # bad arguments / usage

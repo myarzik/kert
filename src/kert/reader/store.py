@@ -109,10 +109,21 @@ class BookStore:
     def log_advance(
         self, ts: float, sentence_id: int, chunk_words: int, direction: int
     ) -> None:
-        raise NotImplementedError
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO advance_log (ts, sentence_id, chunk_words, direction) "
+                "VALUES (?, ?, ?, ?)",
+                (ts, sentence_id, chunk_words, direction),
+            )
 
     def trim_advance_log(self, keep: int) -> None:
-        raise NotImplementedError
+        """Delete all but the `keep` newest advance_log rows."""
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM advance_log WHERE id NOT IN "
+                "(SELECT id FROM advance_log ORDER BY id DESC LIMIT ?)",
+                (keep,),
+            )
 
     def close(self) -> None:
         # Fold the WAL back so the .kert stays a single portable file.

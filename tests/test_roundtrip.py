@@ -40,8 +40,9 @@ GOLDEN_W6 = [
 
 
 @pytest.fixture
-def toml(tmp_path):
-    return tmp_path / "config" / "kert" / "config.toml"
+def toml(tmp_path_factory):
+    # Outside the book's directory: :set creates it (§8.4 write-through).
+    return tmp_path_factory.mktemp("config") / "kert" / "config.toml"
 
 
 def chunk_texts(state):
