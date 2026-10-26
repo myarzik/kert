@@ -76,6 +76,18 @@ def compile_command(
     )
 
 
+@app.command("inspect")
+def inspect_command(
+    book: Annotated[Path, typer.Argument(metavar="BOOK")],
+    sentence: Annotated[int | None, typer.Option("--sentence")] = None,
+    block: Annotated[int | None, typer.Option("--block")] = None,
+    span: Annotated[str | None, typer.Option("--range", metavar="A:B")] = None,
+    width: Annotated[int, typer.Option("--width", min=5, max=12)] = 8,
+) -> None:
+    """Show split candidates and assembled chunks (plain text)."""
+    raise NotImplementedError
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point; maps outcomes to exit codes (spec §9)."""
     try:
