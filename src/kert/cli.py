@@ -85,7 +85,15 @@ def inspect_command(
     width: Annotated[int, typer.Option("--width", min=5, max=12)] = 8,
 ) -> None:
     """Show split candidates and assembled chunks (plain text)."""
-    raise NotImplementedError
+    from kert.reader import inspect
+    from kert.reader.store import BookStore
+
+    parsed_span = None if span is None else inspect.parse_range(span)
+    with BookStore.open(book) as store:
+        selected = inspect.select_sentences(
+            store.sentences, sentence=sentence, block=block, span=parsed_span
+        )
+    typer.echo("\n\n".join(inspect.render_inspection(s, width) for s in selected))
 
 
 def main(argv: list[str] | None = None) -> int:
