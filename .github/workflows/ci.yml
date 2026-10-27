@@ -4,9 +4,30 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --group dev --locked
+      - run: uv run ruff check --output-format=github
+      - run: uv run ruff format --check
+
   test:
+    name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -15,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
-      - run: uv sync --all-groups --locked
-      - run: uv run ruff check
-      - run: uv run ruff format --check
+        with:
+          enable-cache: true
+      - run: uv sync --group dev --group models --locked
       - run: uv run pytest

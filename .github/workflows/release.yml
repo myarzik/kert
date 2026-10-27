@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:  # dry run: build and smoke-test without publishing
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - id: version
+        shell: bash
+        run: |
+          version="$(uv version --short)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pyproject version ${version}"
+            exit 1
+          fi
+
+  tests:
+    name: Tests
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: [version, tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: macos-arm64
+          - os: ubuntu-22.04  # older glibc: runs on more distributions
+            target: linux-x86_64
+          - os: windows-latest
+            target: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --group models --group release --locked
+      - name: Build with PyInstaller
+        run: uv run pyinstaller packaging/kert.spec --noconfirm --distpath dist --workpath build
+      - name: Smoke-test the binary and archive it
+        run: uv run python packaging/smoke_package.py dist ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kert-${{ matrix.target }}
+          path: |
+            dist/kert-*.tar.gz
+            dist/kert-*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag'
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # full history and tags for the changelog
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Checksums
+        working-directory: assets
+        run: sha256sum kert-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Release notes
+        run: uv run --only-group release git-cliff --latest --strip all > notes.md && cat notes.md
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" assets/* \
+            --title "kert ${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            --verify-tag
