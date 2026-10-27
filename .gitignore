@@ -12,3 +12,4 @@ htmlcov/
 *.kert-wal
 *.kert-shm
 .DS_Store
+.idea/
