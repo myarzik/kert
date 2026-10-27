@@ -10,7 +10,6 @@ from kert.reader.state import ReaderState, block_range
 MAX_TEXT_WIDTH = 88
 MIN_COLUMNS = 40
 NARROW_NOTICE = f"Terminal too narrow: {MIN_COLUMNS}+ columns needed"
-MARKER = "…"
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,13 +18,12 @@ class Theme:
     rest: str
     neighbor: str
     status: str
-    marker: str
 
 
 # §7.2 / D12: explicit 256-color greys, never the `dim` attribute.
 THEMES = {
-    "dark": Theme("bold white", "grey50", "grey35", "grey50", "grey35"),
-    "light": Theme("bold black", "grey62", "grey74", "grey62", "grey74"),
+    "dark": Theme("bold white", "grey50", "grey35", "grey50"),
+    "light": Theme("bold black", "grey62", "grey74", "grey62"),
 }
 
 
@@ -39,11 +37,14 @@ def build_frame(state: ReaderState) -> RenderableType:
     margin = " " * ((columns - width) // 2)
     height = rows - 1  # last row is the status line
 
+    # Center focus (§7.1): the chunk's first line sits on row (H - h) // 2 and
+    # the text runs above and below it as one tape, cut at the screen edges.
     lines, first, last = _active_block(state, width, theme)
-    if len(lines) > height:
-        content = _clip(lines, first, last, height, theme)
-    else:
-        content = _with_neighbors(state, lines, height, width, theme)
+    top = max(0, (height - (last - first + 1)) // 2)
+    content = [
+        *_tape_above(state, lines[:first], top, width, theme),
+        *_tape_below(state, lines[first:], height - top, width, theme),
+    ]
     content += [Text()] * (height - len(content))
     content.append(_status(state, width, theme))
     return Group(*(Text(margin) + line if line else line for line in content))
@@ -88,48 +89,32 @@ def _active_block(
     return lines, hits[0], hits[-1]
 
 
-def _clip(
-    lines: list[Text], first: int, last: int, height: int, theme: Theme
+def _tape_above(
+    state: ReaderState, rows: list[Text], space: int, width: int, theme: Theme
 ) -> list[Text]:
-    """Window of `height` rows centered on the active chunk, `…` per cut edge."""
-    marker = Text(MARKER, style=theme.marker)
-    shown = height - 2
-    top = (first + last) // 2 - shown // 2
-    top = max(min(top, first), last - shown + 1)  # keep the chunk visible
-    top = max(0, min(top, len(lines) - shown))
-    if top == 0:
-        return [*lines[: height - 1], marker]
-    if top + shown >= len(lines):
-        return [marker, *lines[len(lines) - (height - 1) :]]
-    return [marker, *lines[top : top + shown], marker]
+    """Exactly `space` rows ending just above the active chunk."""
+    start, _ = block_range(state.chunks, state.index)
+    while len(rows) < space and start > 0:
+        prev, _ = block_range(state.chunks, start - 1)
+        block = _wrap(_block_text(state, prev, start, theme.neighbor), width)
+        rows = [*block, Text(), *rows]
+        start = prev
+    rows = rows[max(0, len(rows) - space) :] if space else []
+    return [*([Text()] * (space - len(rows))), *rows]
 
 
-def _with_neighbors(
-    state: ReaderState, lines: list[Text], height: int, width: int, theme: Theme
+def _tape_below(
+    state: ReaderState, rows: list[Text], space: int, width: int, theme: Theme
 ) -> list[Text]:
-    """Center the active block; add each neighbor only if it fits whole."""
-    above_space = (height - len(lines)) // 2
-    below_space = height - len(lines) - above_space
-    start, end = block_range(state.chunks, state.index)
-
-    above: list[Text] = []
-    if start > 0:
-        prev = _wrap(
-            _block_text(state, *block_range(state.chunks, start - 1), theme.neighbor),
-            width,
-        )
-        if len(prev) + 1 <= above_space:
-            above = [*prev, Text()]
-    below: list[Text] = []
-    if end < len(state.chunks.spans):
-        nxt = _wrap(
-            _block_text(state, *block_range(state.chunks, end), theme.neighbor), width
-        )
-        if len(nxt) + 1 <= below_space:
-            below = [Text(), *nxt]
-
-    padding = [Text()] * (above_space - len(above))
-    return [*padding, *above, *lines, *below]
+    """At most `space` rows starting at the active chunk."""
+    _, end = block_range(state.chunks, state.index)
+    count = len(state.chunks.spans)
+    while len(rows) < space and end < count:
+        _, nxt = block_range(state.chunks, end)
+        block = _wrap(_block_text(state, end, nxt, theme.neighbor), width)
+        rows = [*rows, Text(), *block]
+        end = nxt
+    return rows[:space]
 
 
 def _status(state: ReaderState, width: int, theme: Theme) -> Text:
