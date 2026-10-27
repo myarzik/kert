@@ -6,6 +6,17 @@ from kert.common.errors import KertError
 from kert.common.model import Lang
 
 MODELS: dict[Lang, str] = {"ru": "ru_core_news_sm", "en": "en_core_web_sm"}
+# Pinned in pyproject.toml [tool.uv.sources]; golden tests depend on it (§2.1).
+MODEL_VERSION = "3.8.0"
+
+
+def _model_requirement(lang: Lang) -> str:
+    name = MODELS[lang]
+    url = (
+        "https://github.com/explosion/spacy-models/releases/download/"
+        f"{name}-{MODEL_VERSION}/{name}-{MODEL_VERSION}-py3-none-any.whl"
+    )
+    return f"{name.replace('_', '-')} @ {url}"
 
 
 def load_model(lang: Lang) -> Language:
@@ -13,8 +24,12 @@ def load_model(lang: Lang) -> Language:
         return spacy.load(MODELS[lang], disable=["ner", "lemmatizer"])
     except OSError as exc:
         raise KertError(
-            f"spaCy model {MODELS[lang]!r} for --lang {lang} is not installed. "
-            "Install the pinned models with: uv sync --group models"
+            f"spaCy model {MODELS[lang]!r} for --lang {lang} is not installed.\n"
+            "  Development checkout: uv sync --group models\n"
+            "  Installed with uv tool: from your kert checkout, run\n"
+            "    uv tool install . --force --python 3.14 "
+            f'--with "{_model_requirement(lang)}"\n'
+            "  (one --with per language you compile; see README)"
         ) from exc
 
 
