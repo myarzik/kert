@@ -1,5 +1,6 @@
 import sys
 import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -35,11 +36,13 @@ def write(path, text):
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin"])
-def test_config_path_is_xdg_on_linux_and_macos(monkeypatch, tmp_path, platform):
+def test_config_path_is_xdg_on_linux_and_macos(monkeypatch, platform):
+    # A POSIX path even on a Windows CI host: platformdirs ignores
+    # XDG_CONFIG_HOME unless it is POSIX-absolute.
     monkeypatch.setattr(sys, "platform", platform)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", "/xdg-config")
 
-    assert config.config_path() == tmp_path / "kert" / "config.toml"
+    assert config.config_path() == Path("/xdg-config/kert/config.toml")
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows known-folder lookup")
