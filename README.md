@@ -18,10 +18,35 @@ MVP scope: `.txt` input in Russian or English, manual advancing only. To read
 EPUB, Markdown or other formats, convert them to plain text first, for example
 `pandoc book.epub -t plain -o book.txt`.
 
-## Install (end users)
+## Download a prebuilt build
 
-kert needs Python 3.14 and [uv](https://docs.astral.sh/uv/). There is no PyPI
-release yet; install from a clone of this repository.
+Each [GitHub Release](https://github.com/myarzik/kert/releases) has
+self-contained builds with Python and both spaCy models included. You don't need
+Python or uv:
+
+| Platform | Archive |
+|---|---|
+| macOS (Apple Silicon) | `kert-<version>-macos-arm64.tar.gz` |
+| Linux x86-64 (glibc 2.35+) | `kert-<version>-linux-x86_64.tar.gz` |
+| Windows x86-64 | `kert-<version>-windows-x86_64.zip` |
+
+Unpack the archive and run `kert` (`kert.exe` on Windows) from the `kert`
+folder. You can also add that folder to your `PATH`. Unpacked, a build takes
+about 150 MB. `SHA256SUMS.txt` in the release lists checksums for the archives.
+
+The builds are not code-signed:
+
+- **macOS** blocks a downloaded unsigned binary. Clear the quarantine flag once
+  after unpacking: `xattr -dr com.apple.quarantine kert`. The first launch can
+  take up to half a minute while macOS scans the bundled libraries; after that
+  kert starts instantly.
+- **Windows** SmartScreen may warn on first run: choose *More info → Run
+  anyway*.
+
+## Install from source
+
+This path needs Python 3.14 and [uv](https://docs.astral.sh/uv/). There is no
+PyPI release yet, so install from a clone of this repository.
 
 The spaCy models are **not bundled**. With `uv tool install` you add the model
 for each language you compile with `--with`. The pinned versions must match
@@ -149,6 +174,29 @@ uv run kert read /tmp/book.kert
 - Golden candidate tests are bound to the pinned model versions. Upgrading a
   model is a separate task that includes regenerating and re-reviewing the
   goldens.
+
+### Releasing
+
+Versions follow [Semantic Versioning](https://semver.org). The next version
+and `CHANGELOG.md` come from the conventional commit messages, generated with
+[git-cliff](https://git-cliff.org) (`cliff.toml`). While the major version is
+0, `feat` bumps the minor version and `fix` bumps the patch version.
+
+```sh
+scripts/release.sh          # bump version, regenerate CHANGELOG.md, run checks, commit, tag
+git push origin main vX.Y.Z # the tag push starts the release workflow
+```
+
+`.github/workflows/release.yml` checks that the tag matches the version in
+`pyproject.toml` and runs the full test suite. It then builds the PyInstaller
+bundle (`packaging/kert.spec`) on macOS, Linux and Windows, and smoke-tests
+each binary outside any Python environment (`packaging/smoke_package.py`).
+Last, it publishes a GitHub Release with the archives, checksums and the
+changelog section for that version. To build and smoke-test without
+publishing, run the workflow manually from the Actions tab.
+
+To build locally: `uv run pyinstaller packaging/kert.spec --distpath dist
+--workpath build`.
 
 ## Manual acceptance checklist
 
