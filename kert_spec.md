@@ -306,8 +306,7 @@ W = 6, 8, 12.
 ### 7.1 Layout
 - Single `rich.live.Live` region, `screen=True` (alternate screen buffer), redraw on every navigation event only (no timers in MVP).
 - Content: the **current paragraph (block)** rendered as wrapped text, width = min(terminal width − 4, 88).
-- Above/below: up to 1 neighboring block each, if vertical space allows, both fully dimmed. Simple heuristic; no scrolling engine — the active block is vertically centered when possible.
-- **Tall-block clipping:** if the active block (wrapped) exceeds available height, render a window of wrapped lines centered on the line containing the active chunk; each truncated edge is marked with a single dimmed `…` line. Neighbor blocks are dropped first when vertical space is tight; the active chunk must always be fully visible.
+- **Center focus ("typewriter" layout):** the active chunk is anchored at the vertical center of the reading area — its first wrapped line sits on row `(H − h) // 2`, where `H` is the reading-area height and `h` the chunk's wrapped line count. Text flows continuously around it like a tape: above, the rest of the active block, then the previous blocks; below, the rest of the active block, then the next blocks. Consecutive blocks are separated by one blank line; non-active blocks are fully dimmed. Text that does not fit is cut at the screen edge with no marker; at the start/end of the book the space beyond the text stays empty. A block taller than the screen needs no special case — the window always follows the active chunk, which is therefore always fully visible.
 - Bottom line (status): right-aligned `NN.N%` — **percent is word-based**: (words before the active chunk) / `meta.word_count`. Word-based progress is stable across chunk-width changes (chunk-index-based percent is not). The Reader precomputes cumulative word counts during chunk assembly (§5 step 4). Left-aligned: transient message area (command feedback, errors) and the `:` command input when active.
 
 ### 7.2 Styles (D12) — two hardcoded theme presets
@@ -321,7 +320,6 @@ settings (§8.4).
 | Rest of active block | `grey50` | `grey62` |
 | Neighbor blocks | `grey35` | `grey74` |
 | Status line | `grey50` | `grey62` |
-| Truncation marker `…` | `grey35` | `grey74` |
 | Dialogue leading `—` | part of text, same rules | part of text, same rules |
 
 No `dim` attribute anywhere. No 24-bit-only colors. Themes are the only two

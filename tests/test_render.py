@@ -54,11 +54,25 @@ def status(percent, left="", margin=2, width=40):
     return " " * margin + left + " " * (width - len(left) - len(percent)) + percent
 
 
-# --- Layout (§7.1) --------------------------------------------------------------------
+# --- Center focus layout (§7.1) -------------------------------------------------------
+# Reading area H = rows - 1; the active chunk's first line sits on row (H - h) // 2.
 
 
-def test_active_block_centered_with_both_neighbors():
+def active_rows(state):
+    """Rows whose text includes the bold active chunk."""
+    console = console_for(state)
+    rendered = console.render_lines(build_frame(state), console.options, pad=False)
+    return [
+        row
+        for row, line in enumerate(rendered)
+        if any(seg.style and seg.style.bold and seg.text.strip() for seg in line)
+    ]
+
+
+def test_chunk_on_first_line_of_block_sits_on_center_row():
+    # H=11, h=1 -> row 5; above: B1 + blank; below: rest of B2, blank, B3.
     assert lines(state_at(Position(2, 0), (44, 12))) == [
+        "",
         "",
         "",
         f"  {B1}",
@@ -68,15 +82,16 @@ def test_active_block_centered_with_both_neighbors():
         "",
         f"  {B3[0]}",
         f"  {B3[1]}",
-        "",
         "",
         status("9.1%"),  # 2 / 22 words
     ]
 
 
-def test_neighbors_that_exactly_fit_are_shown():
-    # 7 content rows: 2 active, 2 above, 3 below.
-    assert lines(state_at(Position(2, 0), (44, 8))) == [
+def test_chunk_on_second_line_of_block_also_sits_on_center_row():
+    # "Short one." is on B2's second line: B2's first line moves above the center.
+    assert lines(state_at(Position(3, 0), (44, 12))) == [
+        "",
+        "",
         f"  {B1}",
         "",
         f"  {B2[0]}",
@@ -84,35 +99,35 @@ def test_neighbors_that_exactly_fit_are_shown():
         "",
         f"  {B3[0]}",
         f"  {B3[1]}",
-        status("9.1%"),
+        "",
+        "",
+        status("50.0%"),  # 11 / 22 words
     ]
 
 
-def test_neighbor_that_does_not_fit_is_dropped_whole():
-    # 6 content rows: 2 above fits the 1-line B1, 2 below cannot hold B3.
-    assert lines(state_at(Position(2, 0), (44, 7))) == [
+def test_two_line_chunk_is_centered_as_a_whole():
+    # "foxtrot golf hotel india." spans both B2 lines: h=2 -> rows 4-5.
+    state = state_at(Position(2, 5), (44, 12))
+
+    assert lines(state) == [
+        "",
+        "",
         f"  {B1}",
         "",
         f"  {B2[0]}",
         f"  {B2[1]}",
         "",
+        f"  {B3[0]}",
+        f"  {B3[1]}",
         "",
-        status("9.1%"),
+        "",
+        status("31.8%"),  # 7 / 22 words
     ]
+    assert active_rows(state) == [4, 5]
 
 
-def test_tight_space_drops_both_neighbors():
-    assert lines(state_at(Position(2, 0), (44, 6))) == [
-        "",
-        f"  {B2[0]}",
-        f"  {B2[1]}",
-        "",
-        "",
-        status("9.1%"),
-    ]
-
-
-def test_first_block_has_no_upper_neighbor():
+def test_book_start_leaves_space_above_and_cuts_text_below():
+    # Nothing precedes B1; B3's second line falls below the screen edge, unmarked.
     assert lines(state_at(Position(1, 0), (44, 12))) == [
         "",
         "",
@@ -124,9 +139,48 @@ def test_first_block_has_no_upper_neighbor():
         f"  {B2[0]}",
         f"  {B2[1]}",
         "",
-        "",
+        f"  {B3[0]}",
         status("0.0%"),
     ]
+
+
+def test_book_end_leaves_space_below():
+    # "six seven eight nine." spans both B3 lines (h=2 -> rows 4-5).
+    assert lines(state_at(Position(4, 5), (44, 12))) == [
+        "",
+        f"  {B2[0]}",
+        f"  {B2[1]}",
+        "",
+        f"  {B3[0]}",
+        f"  {B3[1]}",
+        "",
+        "",
+        "",
+        "",
+        "",
+        status("81.8%"),
+    ]
+
+
+def test_short_screen_cuts_neighbors_at_both_edges():
+    # H=5, h=1 -> row 2: two rows above, three below.
+    assert lines(state_at(Position(2, 0), (44, 6))) == [
+        f"  {B1}",
+        "",
+        f"  {B2[0]}",
+        f"  {B2[1]}",
+        "",
+        status("9.1%"),
+    ]
+
+
+@pytest.mark.parametrize("rows", [6, 12, 25])
+def test_focus_stays_on_center_row_while_reading(rows):
+    state = state_at(Position(1, 0), (44, rows))
+    center = (rows - 1 - 1) // 2
+    for _ in range(len(state.chunks.spans)):
+        assert center in active_rows(state)
+        state = handle_key(state, "j")
 
 
 def test_text_width_is_capped_at_88_and_centered():
@@ -140,7 +194,7 @@ def test_frame_fills_terminal_height():
     assert len(lines(state_at(Position(4, 5), (44, 20)))) == 20
 
 
-# --- Tall-block clipping (§7.1) -------------------------------------------------------
+# --- Blocks taller than the screen (§7.1) --------------------------------------------
 
 TALL_WORDS = ("alpha", "gamma", "kappa", "omega", "sigma", "theta", "zetas", "betas")
 TALL = [f"{w} bravo charlie delta echo golf." for w in TALL_WORDS]  # 36 chars
@@ -162,16 +216,20 @@ def tall_at(sentence_id):
     return state_at(Position(sentence_id, 0), (44, 6), book=tall_book())
 
 
-def test_tall_block_at_top_marks_only_bottom_edge():
-    assert lines(tall_at(1))[:-1] == [f"  {t}" for t in TALL[:4]] + ["  …"]
+def test_tall_block_start_keeps_focus_centered():
+    assert lines(tall_at(1))[:-1] == ["", "", *(f"  {t}" for t in TALL[:3])]
 
 
-def test_tall_block_in_middle_marks_both_edges():
-    assert lines(tall_at(5))[:-1] == ["  …", *(f"  {t}" for t in TALL[3:6]), "  …"]
+def test_tall_block_middle_scrolls_like_a_tape():
+    assert lines(tall_at(5))[:-1] == [f"  {t}" for t in TALL[2:7]]
 
 
-def test_tall_block_at_bottom_marks_only_top_edge():
-    assert lines(tall_at(8))[:-1] == ["  …", *(f"  {t}" for t in TALL[4:])]
+def test_tall_block_end_shows_the_next_block():
+    assert lines(tall_at(8))[:-1] == [
+        *(f"  {t}" for t in TALL[5:]),
+        "",
+        "  Short one.",
+    ]
 
 
 @pytest.mark.parametrize("sentence_id", range(1, 9))
@@ -179,6 +237,11 @@ def test_active_chunk_always_visible_in_tall_block(sentence_id):
     state = tall_at(sentence_id)
 
     assert style_of(state, TALL[sentence_id - 1]) == ("white", True)
+    assert active_rows(state) == [2]
+
+
+def test_cut_edges_have_no_marker():
+    assert not any("…" in line for line in lines(tall_at(5)))
 
 
 # --- Styles (§7.2) --------------------------------------------------------------------
@@ -200,13 +263,6 @@ def test_theme_presets(settings, active, rest, neighbor, status_color):
     assert style_of(state, B1) == (neighbor, False)
     assert style_of(state, B3[0]) == (neighbor, False)
     assert style_of(state, "9.1%") == (status_color, False)
-
-
-@pytest.mark.parametrize(("settings", "color"), [(DARK, "grey35"), (LIGHT, "grey74")])
-def test_truncation_marker_style(settings, color):
-    state = state_at(Position(5, 0), (44, 6), settings, book=tall_book())
-
-    assert style_of(state, "…") == (color, False)
 
 
 def test_active_chunk_spanning_a_line_break_is_styled_on_both_lines():
