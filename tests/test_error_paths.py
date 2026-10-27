@@ -2,6 +2,8 @@
 
 import io
 import sqlite3
+import tomllib
+from pathlib import Path
 
 import msgpack
 import pytest
@@ -36,6 +38,20 @@ def test_missing_model_is_user_error_with_remediation(no_models, lang, model):
 
     assert model in str(exc.value)
     assert "uv sync --group models" in str(exc.value)
+
+
+def test_missing_model_message_has_uv_tool_install_command(no_models):
+    # The wheel URL must match the pin in pyproject.toml (no silent drift).
+    pyproject = tomllib.loads(
+        (Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    url = pyproject["tool"]["uv"]["sources"]["ru-core-news-sm"]["url"]
+
+    with pytest.raises(KertError) as exc:
+        segment.load_model("ru")
+
+    assert "uv tool install . --force --python 3.14" in str(exc.value)
+    assert f'--with "ru-core-news-sm @ {url}"' in str(exc.value)
 
 
 def test_compile_with_missing_model_exits_1_and_writes_nothing(
