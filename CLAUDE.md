@@ -13,7 +13,7 @@ source of truth. When this file and the spec disagree, the spec wins.**
   venvs manually, never generate `requirements.txt`.
 - `uv.lock` is committed. Dependency changes are their own commits.
 - **Pin everything**: runtime deps use exact `==` pins; spaCy baseline
-  `spacy==3.8.13` (cp314 wheels verified); models installed as exact-version
+  `spacy==3.8.16` (cp314 wheels verified); models installed as exact-version
   URL deps in the `models` group.
 - Do NOT use Python 3.14-only language features (spec §2.1 keeps a
   one-line fallback to 3.13 open).
