@@ -75,7 +75,7 @@ uv sync --all-groups          # provision env + dev tools + models
 uv run pytest                 # full suite
 uv run pytest -m "not spacy"  # fast suite without models
 uv run ruff check && uv run ruff format --check
-uv run kert compile fixtures/book_ru.txt -o /tmp/book.kert --lang ru
+uv run kert compile tests/fixtures/book_ru.txt -o /tmp/book.kert --lang ru
 uv run kert read /tmp/book.kert
 uv run kert inspect /tmp/book.kert --sentence 3 --width 8
 ```
