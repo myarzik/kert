@@ -49,3 +49,7 @@ models = [
     "en-core-web-sm",
     "ru-core-news-sm",
 ]
+release = [
+    "git-cliff==2.14.2",
+    "pyinstaller==6.22.3",
+]
