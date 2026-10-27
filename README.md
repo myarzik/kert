@@ -155,23 +155,23 @@ uv run kert read /tmp/book.kert
 Run on **Windows Terminal**, **macOS Terminal.app** and **one Linux terminal
 emulator**, with both `:set theme=dark` and `:set theme=light`:
 
-- [ ] `uv run kert compile tests/fixtures/book_ru.txt -o book.kert --lang ru`
+- [x] `uv run kert compile tests/fixtures/book_ru.txt -o book.kert --lang ru`
       succeeds and prints a summary.
-- [ ] `uv run kert read book.kert` opens in the alternate screen; on quit the
+- [x] `uv run kert read book.kert` opens in the alternate screen; on quit the
       terminal is restored.
-- [ ] Russian text, including `—` dialogue dashes, renders correctly.
-- [ ] The active fragment is clearly brighter/bolder than the rest of its
+- [x] Russian text, including `—` dialogue dashes, renders correctly.
+- [x] The active fragment is clearly brighter/bolder than the rest of its
       paragraph; neighbor paragraphs are dimmer still. Check contrast in both
       themes on the matching background.
-- [ ] `Space`/`j`/`→` and `b`/`k`/`←` move by fragment; `J`/`K`, `gg`, `G`
+- [x] `Space`/`j`/`→` and `b`/`k`/`←` move by fragment; `J`/`K`, `gg`, `G`
       jump as documented.
-- [ ] `:set width=5` and `:set width=12` re-chunk and keep the reading
+- [x] `:set width=5` and `:set width=12` re-chunk and keep the reading
       position; the percentage does not change.
-- [ ] `:goto 50` lands near the middle; an unknown command shows an error
+- [x] `:goto 50` lands near the middle; an unknown command shows an error
       without crashing.
-- [ ] Resize the window: the layout updates on the next key press. Below 40
+- [x] Resize the window: the layout updates on the next key press. Below 40
       columns the "Terminal too narrow" notice appears; widening restores the
       text.
-- [ ] Quit with `q`, reopen: the same fragment is active. Repeat with
+- [x] Quit with `q`, reopen: the same fragment is active. Repeat with
       `Ctrl+C`.
-- [ ] After quitting, only `book.kert` remains (no `-wal`/`-shm` files).
+- [x] After quitting, only `book.kert` remains (no `-wal`/`-shm` files).
