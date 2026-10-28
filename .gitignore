@@ -13,3 +13,8 @@ htmlcov/
 *.kert-shm
 .DS_Store
 .idea/
+
+# Android / Gradle
+.gradle/
+.kotlin/
+local.properties
