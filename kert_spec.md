@@ -781,3 +781,145 @@ Approved 2026-10-28. Two PyInstaller builds per release target:
   `SHA256SUMS.txt`. Smoke test for the Reader build: `--version`; `inspect` on
   a book compiled by the full build of the same target, against the golden;
   `compile` → exit 1 with the message.
+
+---
+
+## 16. Android Reader (stage 0, native Kotlin)
+
+Approved 2026-10-28. Pivot-map "Android app" stage 0: a native Android app that
+**reads `.kert` files compiled on the desktop**. Compiling on the phone is out
+of scope (no spaCy on Android). The Python code stays the reference
+implementation, and the app's behavior must match it.
+
+### 16.1 Scope
+
+In: open/import `.kert` files, a library of imported books, the
+center-focus reading view (§7.1, §14.7), chunk/block/book navigation,
+width 5–12 and dark/light theme settings, word-based percent and goto,
+reading position and `advance_log` written into the book (D5, D8).
+Out (later stages): compiling, chapter/TOC navigation, search, annotations,
+sync between devices, Play Store publishing.
+
+### 16.2 Repository layout & toolchain
+
+```
+android/                      Gradle project (Kotlin DSL, version catalog)
+  gradle/libs.versions.toml   every dependency and plugin pinned exactly
+  core/                       pure Kotlin/JVM: no Android imports
+    model, blob decoding, offsets, word predicate, chunker, ReaderState
+  app/                        Android application (Jetpack Compose)
+```
+
+- Gradle wrapper committed and pinned; JDK 17. Exact pins for Kotlin,
+  Android Gradle Plugin, Compose BOM and all libraries (same determinism
+  policy as §2.1). `applicationId` `io.github.myarzik.kert`, `minSdk` 26,
+  `targetSdk`/`compileSdk` = latest stable at implementation time.
+- `core` is testable with the plain JDK (`./gradlew :core:test`), with no Android
+  SDK. `app` needs the Android SDK and builds in CI (local SDK optional).
+- Python stays on uv; the two toolchains share only the `.kert` format and
+  the reference fixtures (§16.6).
+
+### 16.3 Porting contract (core)
+
+- **`.kert` reading:** schema version check (§5 step 1); full scan of `meta`,
+  `blocks`, `sentences`; msgpack blobs decoded as in §3 (tokens: array of
+  `[start, end]`; candidates: array of `[token_index, weight]`, weight a
+  float).
+- **Character offsets:** token offsets in `.kert` are **Unicode code point**
+  offsets (Python `str` indexing). Kotlin strings index UTF-16 code units,
+  so `core` converts offsets per sentence (`String.offsetByCodePoints`)
+  before using them. Tests include a sentence with characters outside the
+  BMP (e.g. emoji).
+- **Word predicate (§14.3):** a token is a word if every code point is a
+  letter (`Character.isLetter`, matching Python `str.isalpha`) or the token
+  matches `\d+([.,]\d+)*` with ASCII digits. Percent = words before the
+  active chunk / `meta.word_count`, clamped (SPEC_NOTES 8a).
+- **Chunker:** §6 DP exactly as in `reader/chunker.py`, including the
+  overlong-chunk lexicographic rule and the earliest-cut tie-break with
+  epsilon 1e-9 (SPEC_NOTES, Task 7).
+- **ReaderState:** a pure reducer `reduce(state, action) -> state` with the
+  same semantics as `handle_key` (§8, SPEC_NOTES 8a). Actions: `Next`,
+  `Previous`, `NextBlock`, `PreviousBlock`, `First`, `Last`,
+  `GotoPercent(p)`, `SetWidth(n)`, `SetTheme(t)`. Effects as in Python:
+  `Advance` only for `Next`/`Previous`; `SaveSetting` for width/theme.
+  Position resolution on open and on width change is as in §5 step 4.
+
+### 16.4 Books on the device
+
+- Import via the system file picker (`ACTION_OPEN_DOCUMENT`) and by opening
+  or sharing a `.kert` file from another app (`VIEW`/`SEND` intent
+  filters). The app **copies** the file into its private storage, because
+  SQLite needs a real file path and a content URI is not one. Reading
+  position, settings and `advance_log` live in that copy (D8). Importing
+  the same book again (same `meta.title` + `compiled_at`) asks before it
+  replaces the copy and loses its position.
+- The library screen lists imported books (title, percent, last read) and
+  can delete a book.
+- Each session opens the copy read-write (WAL). On leaving the reader
+  (`onStop`), the app saves the position, trims `advance_log` to 10 000 rows
+  and runs `PRAGMA wal_checkpoint(TRUNCATE)` (§5 on exit).
+
+### 16.5 Reading UI
+
+- Center-focus tape (§7.1): the active chunk's first line stays on the
+  vertical center; the text scrolls smoothly to the next chunk. The rest of
+  the active block, neighbor blocks, headings (bold), code (monospace,
+  layout kept) and list items follow §7.2/§14.7 colors. Dark and light map
+  the §7.2 xterm-256 greys to their RGB values. Default theme: follow the
+  system dark mode until the user picks one.
+- Input: tap on the right two thirds = next chunk; tap on the left third =
+  previous chunk; volume down / up = next / previous (on by default);
+  swipe up / down = next / previous block. Tapping the top edge opens a
+  panel with percent, a goto slider, width 5–12 and theme.
+- The status line shows the percent (one decimal place, like the terminal).
+  The screen stays on while reading.
+- Settings precedence (§8.4 adapted): per-book `reader_state` > app
+  defaults (DataStore) > hardcoded. Changing a setting writes both.
+
+### 16.6 Testing & cross-validation
+
+- `core` follows strict TDD (§13.1) with JUnit 5. Hand-derived goldens from
+  the Python suite are ported verbatim (`test_chunker`, `test_state`,
+  `test_render` layout rules where they apply to `core`).
+- **Reference cross-check:** `scripts/export_android_reference.py` (uv)
+  compiles the fixture books (RU `.txt`, Markdown with code/lists, an EPUB
+  with non-BMP characters) with the Python compiler. It writes the `.kert`
+  files and a JSON reference with the Python chunk spans at W = 5…12, word
+  counts and percents. `core` tests read those and must match exactly. The
+  reference is **generated, not committed**: CI and local runs regenerate it
+  first, so it always reflects the current Python code. This is the
+  pivot-map validation rule ("validate the port against the reference
+  implementation"). It complements the hand-derived goldens and does not
+  replace them.
+- `app`: JVM tests with Robolectric for import, persistence and the Compose
+  reading screen (tap/volume mapping, centered active chunk). No emulator
+  in CI.
+
+### 16.7 CI & distribution
+
+- `android.yml` on push/PR touching `android/` or the reference script:
+  regenerate the reference with uv, then `./gradlew :core:test :app:test
+  :app:lint :app:assembleRelease`.
+- Signing: a release keystore kept in repository secrets
+  (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+  `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`). Without the secrets, CI
+  builds an unsigned release APK (and a debug APK for testing). A stable
+  key is needed so that updates install over older versions.
+- `release.yml` attaches `kert-android-<version>.apk` to the GitHub Release
+  when the signing secrets are present. The app's `versionName` = the
+  Python package version; `versionCode` derived from it
+  (`major*10000 + minor*100 + patch`).
+
+### 16.8 Task order
+
+18. Gradle skeleton (`core` + `app`, version catalog, wrapper), `android.yml`
+    with a trivial test; reference export script.
+19. `core` model + `.kert` reading through a small DB interface (JDBC
+    SQLite in tests), blob decoding, code point offsets, word predicate.
+20. `core` chunker port: hand goldens + reference cross-check.
+21. `core` ReaderState reducer, percent, goto, width change: goldens from
+    `test_state` + reference cross-check.
+22. `app` storage: import/copy, library, Android SQLite implementation,
+    session lifecycle (position, `advance_log` trim, checkpoint).
+23. `app` reading screen: tape layout, gestures, volume keys, settings panel.
+24. Signing and release integration; README "Android" section.
