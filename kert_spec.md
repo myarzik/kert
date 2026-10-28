@@ -753,3 +753,30 @@ class Ingester(Protocol):
     `zipfile` (EPUB 2 NCX-only and EPUB 3 nav variants).
 17. Docs: README formats section, CHANGELOG via the release flow; remove the
     pandoc workaround from Non-goals for these formats.
+
+---
+
+## 15. Distribution Builds (extends O8)
+
+Approved 2026-10-28. Two PyInstaller builds per release target:
+
+| Build | Mode | Contents | Commands |
+|---|---|---|---|
+| `kert` (full) | one directory, archived | everything, both spaCy models | `compile`, `read`, `inspect`, `--version` |
+| `kert-reader` | **one file** | Reader only: no spaCy, numpy, models or `kert.compiler` | `read`, `inspect`, `--version` |
+
+- Rationale: a onefile build unpacks itself on every launch. For the full
+  build that means ~150 MB per run, and on macOS unsigned native libraries
+  are re-verified each time (`compile` measured at 20–30 s instead of 1.5 s).
+  The Reader-only build is small enough that unpacking it is negligible. It
+  reads `.kert` files compiled elsewhere ("compile on the desktop, read
+  anywhere").
+- `kert-reader compile …` exits with code 1 and a message that this build
+  cannot compile and that the full `kert` is needed (no traceback, no
+  exit 2). The CLI recognises the missing compiler from a
+  `ModuleNotFoundError` for `kert.compiler` or `spacy`.
+- Release assets: `kert-<version>-<target>.tar.gz|zip` (full) and
+  `kert-reader-<version>-<target>[.exe]` (single file), both covered by
+  `SHA256SUMS.txt`. Smoke test for the Reader build: `--version`; `inspect` on
+  a book compiled by the full build of the same target, against the golden;
+  `compile` → exit 1 with the message.
