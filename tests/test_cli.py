@@ -148,3 +148,46 @@ def test_unexpected_exception_is_internal_error(out, capsys, monkeypatch):
 
     assert code == 2
     assert "internal error" in capsys.readouterr().err.lower()
+
+
+# --- Formats by suffix (§14.1) --------------------------------------------------
+
+
+MARKDOWN = """# Глава первая
+
+Он вышел из дома, хотя шёл дождь.
+
+- Мы долго гуляли по парку.
+
+```
+x = 1
+```
+"""
+
+
+@pytest.mark.spacy
+def test_compile_markdown_records_format_title_and_block_types(tmp_path, out):
+    require_model("ru_core_news_sm")
+    source = tmp_path / "notes.md"
+    source.write_text(MARKDOWN, encoding="utf-8")
+
+    assert main(["compile", str(source), "-o", str(out), "--lang", "ru"]) == 0
+
+    conn = sqlite3.connect(out)
+    try:
+        meta = dict(conn.execute("SELECT key, value FROM meta"))
+        rows = conn.execute("SELECT type, chapter FROM blocks ORDER BY id").fetchall()
+    finally:
+        conn.close()
+    assert (meta["source_format"], meta["title"]) == ("md", "notes")
+    assert rows == [("heading", 1), ("paragraph", 1), ("list_item", 1), ("code", 1)]
+
+
+def test_compile_unsupported_suffix_is_user_error(tmp_path, out, capsys):
+    source = tmp_path / "book.docx"
+    source.write_bytes(b"PK")
+
+    assert main(["compile", str(source), "-o", str(out), "--lang", "ru"]) == 1
+    err = capsys.readouterr().err
+    assert ".txt" in err and ".md" in err
+    assert not out.exists()

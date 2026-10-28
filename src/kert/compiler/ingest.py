@@ -27,3 +27,7 @@ class IngestResult:
 @runtime_checkable
 class Ingester(Protocol):
     def ingest(self, path: Path) -> IngestResult: ...
+
+
+def ingester_for(path: Path, lang: str) -> tuple[Ingester, str]:
+    raise NotImplementedError
