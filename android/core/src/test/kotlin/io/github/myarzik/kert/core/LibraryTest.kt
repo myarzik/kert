@@ -51,6 +51,16 @@ class LibraryTest {
     }
 
     @Test
+    fun `a file the database cannot even open is a format error`() {
+        // Android's SQLite fails at open time where JDBC fails at the first query.
+        val strict = Library(library.dir) { throw IllegalStateException("cannot open database file") }
+
+        val error = assertThrows<KertFormatException> { strict.stage("junk".byteInputStream()) }
+        assertTrue("cannot open database file" in error.message.orEmpty(), error.message)
+        assertEquals(emptyList<String>(), files())
+    }
+
+    @Test
     fun `a book without text is rejected`() {
         val path = Reference.copy("book_ru.kert", tmp)
         JdbcConnection(path).use { it.execute("DELETE FROM sentences") }
