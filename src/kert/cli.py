@@ -61,13 +61,22 @@ def compile_command(
         bool, typer.Option("--force", help="Overwrite an existing OUTPUT.")
     ] = False,
 ) -> None:
-    """Compile a .txt book into a .kert file."""
+    """Compile a book (.txt, .md, .fb2, .epub) into a .kert file."""
     if paragraph_mode is not ParagraphMode.blank:
         raise KertError(
             f"--paragraph-mode {paragraph_mode.value} is not implemented yet; "
             "only 'blank' is supported."
         )
-    from kert.compiler import pipeline
+    try:
+        from kert.compiler import pipeline
+    except ModuleNotFoundError as exc:
+        # The kert-reader build ships without the compiler stack (§15).
+        if exc.name is None or not exc.name.startswith(("kert.compiler", "spacy")):
+            raise
+        raise KertError(
+            "This build cannot compile books (reader-only). "
+            "Use the full kert build to compile, then read the .kert file here."
+        ) from None
 
     summary = pipeline.compile_book(input_path, output, lang.value, force=force)
     typer.echo(
