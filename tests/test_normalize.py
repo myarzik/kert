@@ -195,3 +195,24 @@ def test_dropped_heading_does_not_start_a_chapter():
     ]
 
     assert chapters(raw) == [("a", None), ("Real", 1)]
+
+
+def test_lone_title_heading_does_not_swallow_chapters():
+    # Real EPUBs (e.g. Project Gutenberg): one h1 book title, chapters as h2.
+    raw = [
+        RawBlock("heading", "Book Title", level=1),
+        RawBlock("paragraph", "front"),
+        RawBlock("heading", "Chapter I", level=2),
+        RawBlock("paragraph", "a"),
+        RawBlock("heading", "Chapter II", level=2),
+        RawBlock("paragraph", "b"),
+    ]
+
+    assert chapters(raw) == [
+        ("Book Title", None),
+        ("front", None),
+        ("Chapter I", 1),
+        ("a", 1),
+        ("Chapter II", 2),
+        ("b", 2),
+    ]

@@ -643,7 +643,9 @@ class Ingester(Protocol):
 - Empty blocks are dropped (code: empty after stripping).
 - Block type: `heading`, `code`, `list_item` map 1:1; `paragraph` goes
   through the §4.3 dialogue rule.
-- `chapter`: let `L` = the smallest heading level present in the document.
+- `chapter`: let `L` = the smallest heading level that occurs at least twice
+  in the document (so a lone book-title `h1` above `h2` chapters does not
+  swallow them); if no level occurs twice, the smallest level present.
   Each heading of level `L` starts a new chapter, numbered from 1; every
   block from that heading up to the next level-`L` heading carries that
   number. Deeper headings do not change it. Blocks before the first
