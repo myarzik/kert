@@ -45,12 +45,13 @@ def decode_text(data: bytes, path: Path, lang: Lang) -> str:
     )
 
 
-SUPPORTED_SUFFIXES = (".txt", ".md", ".markdown", ".fb2", ".fb2.zip")
+SUPPORTED_SUFFIXES = (".txt", ".md", ".markdown", ".fb2", ".fb2.zip", ".epub")
 
 
 def ingester_for(path: Path, lang: Lang) -> tuple[Ingester, str]:
     """Pick the ingester and `meta.source_format` by input suffix (§14.1)."""
     # Imported here: the ingester modules import this one.
+    from kert.compiler.ingest_epub import EpubIngester
     from kert.compiler.ingest_fb2 import Fb2Ingester
     from kert.compiler.ingest_md import MarkdownIngester
     from kert.compiler.ingest_txt import TxtIngester
@@ -59,6 +60,8 @@ def ingester_for(path: Path, lang: Lang) -> tuple[Ingester, str]:
     if name.endswith((".fb2", ".fb2.zip")):
         return Fb2Ingester(lang), "fb2"
     suffix = path.suffix.lower()
+    if suffix == ".epub":
+        return EpubIngester(lang), "epub"
     if suffix == ".txt":
         return TxtIngester(lang), "txt"
     if suffix in (".md", ".markdown"):
