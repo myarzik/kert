@@ -31,7 +31,14 @@ class Library(val dir: Path, private val connect: (Path) -> SqlConnection) {
         val temp = Files.createTempFile(dir, INCOMING, ".kert")
         try {
             input.use { Files.copy(it, temp, StandardCopyOption.REPLACE_EXISTING) }
-            val book = connect(temp).use { KertReader.read(it) }
+            val book = try {
+                connect(temp).use { KertReader.read(it) }
+            } catch (e: KertFormatException) {
+                throw e
+            } catch (e: Exception) {
+                // Android's SQLite rejects a non-database at open time, JDBC at the first query.
+                throw KertFormatException("Not a valid .kert file (${e.message}).", e)
+            }
             if (book.sentences.isEmpty()) throw KertFormatException("This book has no text to read.")
             val title = book.meta["title"].orEmpty()
             val target = dir.resolve(fileName(title, book.meta["compiled_at"].orEmpty()))

@@ -8,10 +8,34 @@
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Open a .kert file from a file manager or messenger (§16.4).
+                 .kert has no registered MIME type: apps send it as a generic
+                 binary or SQLite file; the import validates the content. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/x-sqlite3" />
+                <data android:mimeType="application/vnd.sqlite3" />
+            </intent-filter>
+
+            <!-- Share a .kert file to kert. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/x-sqlite3" />
+                <data android:mimeType="application/vnd.sqlite3" />
             </intent-filter>
         </activity>
     </application>
