@@ -589,3 +589,162 @@ Rules of engagement:
     `uv tool install` from the repo (O8), model provisioning, Windows
     Terminal support note, WAL copy warning (§5), keymap, config file
     location (§8.4), manual acceptance checklist (§10.5).
+
+---
+
+## 14. Format Ingesters — Markdown, FB2, EPUB (post-MVP work package)
+
+Approved 2026-10-28. Extends D1 and §4.1–§4.3; everything else in this spec
+stays in force. Out of scope here: chapter/TOC navigation (data is filled
+now, commands come later), footnote/endnote bodies, images, tables, code
+syntax highlighting (needs a per-block language, i.e. a schema change),
+RSVP, language auto-detect.
+
+### 14.1 Ingest contract (replaces the `list[str]` protocol of §4.1)
+
+```python
+@dataclass(frozen=True, slots=True)
+class RawBlock:
+    kind: Literal["paragraph", "heading", "code", "list_item"]
+    text: str
+    level: int | None = None       # heading level 1..6; None otherwise
+
+@dataclass(frozen=True, slots=True)
+class IngestResult:
+    blocks: list[RawBlock]
+    title: str | None = None       # document metadata title, if the format has one
+
+class Ingester(Protocol):
+    def ingest(self, path: Path) -> IngestResult: ...
+```
+
+- `TxtIngester` emits only `paragraph` blocks and `title=None`; its §4.1
+  behavior is unchanged.
+- `meta.title` = `IngestResult.title`, else the input file stem.
+  `meta.source_format` ∈ `txt | md | fb2 | epub`.
+- Format by input suffix (case-insensitive): `.txt`; `.md`, `.markdown`;
+  `.fb2`, `.fb2.zip` (zip holding exactly one `.fb2`); `.epub`. Anything
+  else → user error (exit 1) listing the supported suffixes.
+  `--paragraph-mode` applies to `.txt` only.
+- Decoding: Markdown follows the §4.1 chain (`utf-8-sig`, then `cp1251` for
+  `--lang ru`). FB2/EPUB XML honor their XML encoding declaration
+  (`windows-1251` FB2 files are common).
+- Malformed input (bad zip, invalid XML, missing OPF/body) → user error
+  naming the file and what is wrong; never a traceback.
+
+### 14.2 Normalize & block typing (extends §4.2–§4.3)
+
+- `paragraph`, `heading`, `list_item`: §4.2 normalization unchanged (NFC,
+  soft hyphen, NBSP, whitespace collapse, RU dash normalization).
+- `code`: NFC and `\r\n`/`\r` → `\n` only; indentation and line breaks are
+  kept verbatim; trailing blank lines stripped.
+- Empty blocks are dropped (code: empty after stripping).
+- Block type: `heading`, `code`, `list_item` map 1:1; `paragraph` goes
+  through the §4.3 dialogue rule.
+- `chapter`: let `L` = the smallest heading level present in the document.
+  Each heading of level `L` starts a new chapter, numbered from 1; every
+  block from that heading up to the next level-`L` heading carries that
+  number. Deeper headings do not change it. Blocks before the first
+  level-`L` heading (and all blocks of a document with no headings) have
+  `chapter = NULL`.
+
+### 14.3 Segment, candidates, word count for un-chunked blocks
+
+- `paragraph`, `dialogue`, `list_item`: §4.4–§4.5 unchanged (spaCy
+  sentences + candidates). A list item is chunked like a paragraph.
+- `heading`, `code`: **not** parsed. The whole block is one sentence row
+  (`seq = 0`); tokens are the `\S+` runs of the text (char spans); the
+  candidate list is empty. With no candidates, §6 always yields exactly one
+  chunk, so these blocks are a single reading stop at any width — no
+  chunker change.
+- Word predicate is shared by Compiler and Reader (`common/`): a token is a
+  word if it is alphabetic or numeric (`\d+([.,]\d+)*`). The Compiler uses
+  spaCy's `is_alpha or like_num` for parsed blocks (§4.6) and the shared
+  predicate for un-chunked blocks; the Reader uses the shared predicate
+  throughout (SPEC_NOTES, Task 8a).
+
+### 14.4 Markdown (`MarkdownIngester`, CommonMark via `markdown-it-py`)
+
+- Leading YAML front matter (a first line `---` up to the next `---` line)
+  is skipped.
+- `#`…`######` / setext headings → `heading` (level from the tag).
+- Paragraphs, including those inside block quotes → `paragraph`.
+- List items → `list_item`, one block per item paragraph. The first
+  paragraph of an item gets the prefix `• ` (bullet list) or `N. ` (ordered
+  list, numbered from the list's start). Nested lists are flattened in
+  document order with the same prefix rules.
+- Fenced and indented code → `code` (content only; the fence info string
+  is dropped).
+- Inline content → plain text: text, inline code content, link text,
+  image alt text; soft and hard line breaks → a space. Emphasis markers
+  vanish.
+- Skipped: HTML blocks, thematic breaks, tables.
+
+### 14.5 FB2 (`Fb2Ingester`, `xml.etree`)
+
+- Title: `description/title-info/book-title`.
+- Read only the first `<body>` that has no `name` attribute; bodies named
+  `notes`/`comments` (footnotes) and `<binary>` are skipped.
+- `<body>/<title>` → `heading` level 1. `<section>` titles → `heading` with
+  level = 1 + section nesting depth (top-level section = 2), capped at 6.
+  Multiple `<p>` inside one `<title>` join with a space.
+- `<subtitle>` → `heading` one level below its section's title (capped at
+  6).
+- `<p>` → `paragraph`; inside `<epigraph>`, `<cite>`, `<annotation>` as
+  well. `<text-author>` → `paragraph`. `<poem>`: each `<v>` → `paragraph`;
+  a poem `<title>` → `heading` as for a subtitle.
+- Inline markup (`emphasis`, `strong`, `strikethrough`, `sub`, `sup`,
+  `code`, `a`) → its text; note references keep their visible text.
+- Skipped: `<empty-line>`, `<image>`, `<table>`.
+
+### 14.6 EPUB (`EpubIngester`, `zipfile` + `xml.etree` + `html.parser`)
+
+- `META-INF/container.xml` → first rootfile → OPF package document.
+- Title: OPF `dc:title`.
+- Reading order: the OPF spine; items with `linear="no"` and the EPUB 3
+  navigation document (manifest `properties` contains `nav`) are skipped.
+  Only XHTML/HTML media types are read.
+- Per content document (lenient `html.parser`):
+  - `h1`…`h6` → `heading` (level from the tag);
+  - `p` → `paragraph`; `li` → `list_item` with the §14.4 prefix rules
+    (`ul` → `• `, `ol` → `N. ` honoring `start`); `pre` → `code`;
+  - text directly inside other block containers (`div`, `section`,
+    `article`, `blockquote`, `body`, …) that is not inside one of the
+    elements above is flushed as a `paragraph` when the container closes
+    or the next block element starts;
+  - `br` → a space (inside `pre`: a line break);
+  - skipped with their content: `head`, `script`, `style`, `nav`, and any
+    element whose `epub:type` contains `footnote`, `endnote`, `rearnote` or
+    `toc`;
+  - character references are decoded; inline elements contribute their
+    text.
+- Documents are concatenated in spine order; chapter numbering (§14.2)
+  runs over the whole book.
+
+### 14.7 Reader (extends §7)
+
+- `heading`: rendered as its own block. Style: the active-chunk style when
+  active, else the neighbor style, plus `bold` in both cases.
+- `code`: rendered with its line breaks and indentation kept (lines longer
+  than the text width wrap). Styles as for any block (active-chunk style
+  when active, neighbor style otherwise); no syntax highlighting yet.
+- `list_item`: a normal block; its prefix is part of the text.
+- Navigation unchanged: each heading and each code block is one stop for
+  `j`/`k`; `J`/`K` treat every block, headings included, as a block.
+
+### 14.8 Task order (strict TDD per §13.1)
+
+12. `common/text.py` shared word predicate; ingest contract refactor —
+    `RawBlock`/`IngestResult`, `TxtIngester` and `normalize` ported, chapter
+    numbering, un-chunked segmentation in `pipeline` (tests: unchanged
+    goldens for `.txt`, new unit tests on hand-built `RawBlock` lists).
+13. Reader support for `heading`/`code` (render styles, verbatim code lines;
+    tests via `build_frame`).
+14. `MarkdownIngester` + format dispatch by suffix + `meta.source_format` /
+    `meta.title` (tests: small hand-written `.md` fixtures, CLI compile).
+15. `Fb2Ingester` (`.fb2`, `.fb2.zip`, `windows-1251` declaration) — tests
+    with small hand-written FB2 fixtures.
+16. `EpubIngester` — tests build minimal EPUBs in `tmp_path` with
+    `zipfile` (EPUB 2 NCX-only and EPUB 3 nav variants).
+17. Docs: README formats section, CHANGELOG via the release flow; remove the
+    pandoc workaround from Non-goals for these formats.
