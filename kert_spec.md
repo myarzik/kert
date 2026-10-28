@@ -856,7 +856,15 @@ android/                      Gradle project (Kotlin DSL, version catalog)
   the same book again (same `meta.title` + `compiled_at`) asks before it
   replaces the copy and loses its position.
 - The library screen lists imported books (title, percent, last read) and
-  can delete a book.
+  can delete a book. So that listing never re-chunks a book, the app also
+  writes `percent` (one decimal) and `last_read` (Unix seconds) into
+  `reader_state` when a session ends. The Python Reader ignores these keys.
+- Library file name: the first 16 hex digits of SHA-256 of
+  `meta.title + "\n" + meta.compiled_at`, plus `.kert`. A duplicate import
+  therefore targets the same name. Import copies into a temporary file
+  first, validates it with a full read (schema version, blobs, at least one
+  sentence) and only then moves it into place, so a bad file leaves nothing
+  behind.
 - Each session opens the copy read-write (WAL). On leaving the reader
   (`onStop`), the app saves the position, trims `advance_log` to 10 000 rows
   and runs `PRAGMA wal_checkpoint(TRUNCATE)` (§5 on exit).
@@ -876,7 +884,8 @@ android/                      Gradle project (Kotlin DSL, version catalog)
 - The status line shows the percent (one decimal place, like the terminal).
   The screen stays on while reading.
 - Settings precedence (§8.4 adapted): per-book `reader_state` > app
-  defaults (DataStore) > hardcoded. Changing a setting writes both.
+  defaults (SharedPreferences) > hardcoded (width 8; theme follows the
+  system). Changing a setting writes both.
 
 ### 16.6 Testing & cross-validation
 
