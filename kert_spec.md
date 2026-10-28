@@ -833,7 +833,8 @@ android/                      Gradle project (Kotlin DSL, version catalog)
   BMP (e.g. emoji).
 - **Word predicate (§14.3):** a token is a word if every code point is a
   letter (`Character.isLetter`, matching Python `str.isalpha`) or the token
-  matches `\d+([.,]\d+)*` with ASCII digits. Percent = words before the
+  matches `\p{Nd}+([.,]\p{Nd}+)*`: any Unicode decimal digit, like Python's
+  `\d` on `str` (Java's `\d` is ASCII-only). Percent = words before the
   active chunk / `meta.word_count`, clamped (SPEC_NOTES 8a).
 - **Chunker:** §6 DP exactly as in `reader/chunker.py`, including the
   overlong-chunk lexicographic rule and the earliest-cut tie-break with
