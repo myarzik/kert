@@ -46,6 +46,38 @@ terminal / precompiling books.
 | VS Code extension | reading docs/README inside the editor | Same logic, wider audience, but "reading in the editor" is a weaker habit hypothesis. |
 | KOReader plugin (e-ink) | chunk mode on e-readers | Lua; tiny niche, but fanatical and feature-hungry audience. |
 
+## Branch 1 addendum — Android app (recorded 2026-10-28, parked)
+
+Trigger: same as Branch 1. Long texts are read on the phone, and that is
+where the focus problem bites. Status: **parked in the map**, no work
+scheduled. Revisit after the §11.1 validation gate.
+
+- **Transfers almost free:** `.kert` is plain SQLite (native on Android) and
+  msgpack blobs (Kotlin libraries exist). The §6 DP chunker is small and pure,
+  so it can be ported to Kotlin and validated against the Python goldens. The
+  center-focus tape layout maps naturally to a portrait screen; Space becomes
+  tap or a volume key, and `:goto` becomes a slider. Reader state and
+  `advance_log` travel inside the file (never open one file on two devices
+  at once: the WAL caveat).
+- **Hard part = the compiler:** spaCy does not run on Android. Options:
+  (1) compile on desktop, read on phone, which needs no compiler port;
+  (2) on-device parsing, either UDPipe (C++, RU models of tens of MB, but UD
+  model licences are often CC BY-NC-SA, so check them) or punctuation +
+  conjunction heuristics (≈80% quality, worse for RU);
+  (3) server-side compile, already rejected as a service in Branch 1.5.
+- **Formats:** phone libraries are EPUB/FB2, not txt; FB2 is a must for RU
+  readers. An EPUB/FB2 ingester on the desktop compiler (D1 adapter) serves
+  both the CLI and any Android path.
+- **Cheaper alternative:** the KOReader plugin (Branch 1) covers Android and
+  e-ink with EPUB/FB2 already solved, at the cost of UX constraints inside
+  its rendering engine.
+- **If picked up:** do the 30-minute prior-art check first (line-focus and
+  RSVP readers exist; syntagma chunking with dimming looked unoccupied).
+  Then build stage 0: a read-only Kotlin + Jetpack Compose app that opens
+  desktop-compiled `.kert` files and tests whether reading this way on the
+  phone actually beats normal reading. Stage 1 (EPUB/FB2, compiling without
+  a desktop) only if stage 0 sticks.
+
 ## Branch 1.5 — Web demo / online service (decided 2026-07-13)
 
 - **Full online reader service (accounts, cloud library, position sync):
