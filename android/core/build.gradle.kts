@@ -4,8 +4,16 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Bytecode for Java 17 (consumed by the Android app); any JDK >= 21 builds it.
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
 kotlin {
-    jvmToolchain(17)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }
 
 dependencies {

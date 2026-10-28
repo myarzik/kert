@@ -6,6 +6,11 @@ pluginManagement {
     }
 }
 
+plugins {
+    // Downloads the pinned test JDK (21) into the Gradle cache when it is missing.
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {

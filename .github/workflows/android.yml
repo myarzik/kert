@@ -41,7 +41,7 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"  # Robolectric needs Java 21 for SDK 36
       - uses: gradle/actions/setup-gradle@v5
       - name: Test, lint and build
         working-directory: android

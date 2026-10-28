@@ -810,7 +810,8 @@ android/                      Gradle project (Kotlin DSL, version catalog)
   app/                        Android application (Jetpack Compose)
 ```
 
-- Gradle wrapper committed and pinned; JDK 17. Exact pins for Kotlin,
+- Gradle wrapper committed and pinned; builds run on JDK 21 (Robolectric
+  needs it for SDK 36) and emit Java 17 bytecode. Exact pins for Kotlin,
   Android Gradle Plugin, Compose BOM and all libraries (same determinism
   policy as §2.1). `applicationId` `io.github.myarzik.kert`, `minSdk` 26,
   `targetSdk` 36, `compileSdk` 37 (raised independently: Compose 1.12
