@@ -337,3 +337,30 @@ def test_goto_jumps_to_chunk_nearest_in_words(percent, index):
 
 def test_colon_q_quits():
     assert type_command(at(2), "q").quit is True
+
+
+# --- Headings and code are single stops (§14.3, §14.7) --------------------------------
+
+
+def test_heading_and_code_are_one_stop_each_at_any_width():
+    from kert.common.model import Sentence
+    from kert.common.text import whitespace_tokens
+
+    long_heading = " ".join(["слово"] * 20)
+    code = "\n".join(f"line_{i} = {i}" for i in range(15))
+    book = Book(
+        blocks=(Block(1, "heading", chapter=1), Block(2, "code", chapter=1)),
+        sentences=(
+            Sentence(1, 1, 0, long_heading, whitespace_tokens(long_heading), ()),
+            Sentence(2, 2, 0, code, whitespace_tokens(code), ()),
+        ),
+        word_count=35,
+    )
+    state = initial_state(book, W5, Position(1, 0))
+
+    assert [(s.sentence_id, s.start_token) for s in state.chunks.spans] == [
+        (1, 0),
+        (2, 0),
+    ]
+    assert press(state, "j").index == 1
+    assert press(state, "J").index == 1

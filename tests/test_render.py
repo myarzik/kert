@@ -336,3 +336,78 @@ def test_narrow_notice_uses_status_style(settings):
     state = state_at(Position(2, 0), (39, 12), settings)
 
     assert style_of(state, "Terminal too narrow") == (color, False)
+
+
+# --- Headings and code blocks (§14.7) ------------------------------------------------
+
+
+def typed_book():
+    from kert.common.model import Sentence
+    from kert.common.text import whitespace_tokens
+
+    def unchunked(id, block_id, text):
+        return Sentence(id, block_id, 0, text, whitespace_tokens(text), ())
+
+    return Book(
+        blocks=(
+            Block(1, "heading", chapter=1),
+            Block(2, "paragraph", chapter=1),
+            Block(3, "code", chapter=1),
+            Block(4, "paragraph", chapter=1),
+        ),
+        sentences=(
+            unchunked(1, 1, "Глава один"),
+            make_sentence(2, 2, 0, "Short one."),
+            unchunked(3, 3, "def f():\n    return 1"),
+            make_sentence(4, 4, 0, "Last one."),
+        ),
+        word_count=8,
+    )
+
+
+def typed_at(sentence_id, settings=DARK):
+    return state_at(Position(sentence_id, 0), (44, 12), settings, book=typed_book())
+
+
+@pytest.mark.parametrize(
+    ("settings", "active", "neighbor"),
+    [(DARK, "white", "grey35"), (LIGHT, "black", "grey74")],
+)
+def test_heading_is_bold_active_or_not(settings, active, neighbor):
+    assert style_of(typed_at(1, settings), "Глава один") == (active, True)
+    assert style_of(typed_at(2, settings), "Глава один") == (neighbor, True)
+
+
+def test_code_keeps_line_breaks_and_indentation():
+    frame = lines(typed_at(3))
+
+    i = frame.index("  def f():")
+    assert frame[i + 1] == "      return 1"
+
+
+@pytest.mark.parametrize(
+    ("sentence_id", "style"), [(3, ("white", True)), (2, ("grey35", False))]
+)
+def test_code_styles_active_and_neighbor(sentence_id, style):
+    assert style_of(typed_at(sentence_id), "return 1") == style
+
+
+def test_code_block_is_centered_as_one_chunk():
+    # h=2 -> rows 4-5 of H=11.
+    assert active_rows(typed_at(3)) == [4, 5]
+
+
+def test_long_code_line_wraps_within_text_width():
+    from kert.common.model import Sentence
+    from kert.common.text import whitespace_tokens
+
+    code = "x = 1  # " + "word " * 12
+    book = Book(
+        blocks=(Block(1, "code"),),
+        sentences=(Sentence(1, 1, 0, code, whitespace_tokens(code), ()),),
+        word_count=13,
+    )
+    frame = lines(state_at(Position(1, 0), (44, 12), book=book))
+
+    assert all(len(line) <= 42 for line in frame[:-1])
+    assert sum(1 for line in frame[:-1] if line) == 2
