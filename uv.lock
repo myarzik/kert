@@ -361,6 +361,7 @@ name = "kert"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "markdown-it-py" },
     { name = "msgpack" },
     { name = "platformdirs" },
     { name = "readchar" },
@@ -386,6 +387,7 @@ release = [
 
 [package.metadata]
 requires-dist = [
+    { name = "markdown-it-py", specifier = "==4.2.0" },
     { name = "msgpack", specifier = "==1.2.3" },
     { name = "platformdirs", specifier = "==4.13.5" },
     { name = "readchar", specifier = "==4.2.2" },
