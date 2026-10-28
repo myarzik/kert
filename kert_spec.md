@@ -40,7 +40,8 @@ context. It ships as two decoupled components:
 | D12 | No reliance on ANSI DIM (`\x1b[2m`). Explicit colors: active chunk `bold white`, context `grey50` (Rich color, degrades safely on 8-color terminals). |
 
 ### Non-goals (MVP)
-- EPUB/FB2/Markdown ingestion (documented workaround: convert via pandoc to txt).
+- EPUB/FB2/Markdown ingestion (documented workaround: convert via pandoc to
+  txt). *Superseded by §14 (2026-10-28): these formats are now ingested.*
 - RSVP / timed advancement.
 - Speaker attribution in dialogues.
 - Search, TOC, bookmarks beyond "last position", statistics screens.

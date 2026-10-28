@@ -14,9 +14,9 @@ It has two parts:
 Changing the fragment width never needs recompilation: the `.kert` file stores
 split-point candidates, not fixed fragments.
 
-MVP scope: `.txt` input in Russian or English, manual advancing only. To read
-EPUB, Markdown or other formats, convert them to plain text first, for example
-`pandoc book.epub -t plain -o book.txt`.
+Input formats: plain text, Markdown, FB2 and EPUB, in Russian or English. You
+advance through the text manually. For other formats, convert to one of these
+first, for example `pandoc book.docx -t markdown -o book.md`.
 
 ## Download a prebuilt build
 
@@ -75,8 +75,21 @@ kert inspect book.kert --sentence 12 --width 8  # calibration/debug view
 kert --version
 ```
 
-- `compile` treats a blank line as a paragraph boundary. It refuses to
-  overwrite an existing output file unless you pass `--force`.
+- `compile` picks the input format from the file suffix:
+
+  | Suffix | Format | Notes |
+  |---|---|---|
+  | `.txt` | plain text | A blank line is a paragraph boundary. |
+  | `.md`, `.markdown` | Markdown (CommonMark) | Front matter, HTML blocks and tables are skipped. |
+  | `.fb2`, `.fb2.zip` | FictionBook 2 | Footnote bodies are skipped; `windows-1251` files work. |
+  | `.epub` | EPUB 2 and 3 | Read in spine order; navigation documents and footnotes are skipped. |
+
+  Headings and code blocks are shown whole, as one stop each; paragraphs and
+  list items are split into fragments. The book title comes from the FB2 or
+  EPUB metadata, otherwise from the file name. Images and tables are not
+  shown.
+- `compile` refuses to overwrite an existing output file unless you pass
+  `--force`.
 - `inspect` prints, in plain text, each selected sentence with its candidate
   cut points marked `⟨weight⟩` and, below it, the fragments for `--width`.
   Select with `--sentence N`, `--block N` or `--range A:B` (sentence ids,
