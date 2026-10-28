@@ -607,12 +607,14 @@ RSVP, language auto-detect.
 class RawBlock:
     kind: Literal["paragraph", "heading", "code", "list_item"]
     text: str
-    level: int | None = None       # heading level 1..6; None otherwise
+    level: int | None = None  # heading level 1..6; None otherwise
+
 
 @dataclass(frozen=True, slots=True)
 class IngestResult:
     blocks: list[RawBlock]
-    title: str | None = None       # document metadata title, if the format has one
+    title: str | None = None  # document metadata title, if the format has one
+
 
 class Ingester(Protocol):
     def ingest(self, path: Path) -> IngestResult: ...
