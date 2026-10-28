@@ -152,3 +152,83 @@ def test_output_is_a_single_file(compiled):
     _, _, listing = compiled
 
     assert listing == ["book.kert"]
+
+
+# --- Typed blocks: un-chunked heading/code, chapters (§14.2–14.3) ------------------
+
+
+@pytest.fixture(scope="module")
+def typed_book(nlp_ru):
+    from kert.compiler.normalize import NormalizedBlock
+    from kert.compiler.pipeline import build_book
+
+    return build_book(
+        [
+            NormalizedBlock("heading", "Глава 1. Начало", chapter=1),
+            NormalizedBlock(
+                "paragraph", "Он вышел из дома, хотя шёл дождь.", chapter=1
+            ),
+            NormalizedBlock("code", "x = 1\ny = 2", chapter=1),
+            NormalizedBlock(
+                "list_item",
+                "• Мы долго гуляли по парку и разговаривали о книгах.",
+                chapter=1,
+            ),
+        ],
+        nlp_ru,
+        "ru",
+    )
+
+
+def by_block(book, block_id):
+    return [s for s in book.sentences if s.block_id == block_id]
+
+
+def test_blocks_keep_type_and_chapter(typed_book):
+    assert [(b.id, b.type, b.chapter) for b in typed_book.blocks] == [
+        (1, "heading", 1),
+        (2, "paragraph", 1),
+        (3, "code", 1),
+        (4, "list_item", 1),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("block_id", "text", "tokens"),
+    [
+        (1, "Глава 1. Начало", ["Глава", "1.", "Начало"]),
+        (3, "x = 1\ny = 2", ["x", "=", "1", "y", "=", "2"]),
+    ],
+)
+def test_heading_and_code_are_one_unparsed_sentence(typed_book, block_id, text, tokens):
+    (sentence,) = by_block(typed_book, block_id)
+
+    assert (sentence.seq, sentence.text) == (0, text)
+    assert [text[s:e] for s, e in sentence.tokens] == tokens
+    assert sentence.candidates == ()
+
+
+def test_paragraph_is_parsed_with_golden_candidates(typed_book):
+    (sentence,) = by_block(typed_book, 2)
+
+    # test_candidates_ru "comma-mark-advcl"
+    assert [(c.token_index, c.weight) for c in sentence.candidates] == [
+        (2, 0.4),
+        (5, 1.0),
+    ]
+
+
+def test_list_item_is_parsed_like_a_paragraph(typed_book):
+    (sentence,) = by_block(typed_book, 4)
+
+    assert [sentence.text[s:e] for s, e in sentence.tokens][:2] == ["•", "Мы"]
+    assert len(sentence.tokens) == 11
+
+
+def test_sentence_ids_are_contiguous_in_reading_order(typed_book):
+    assert [s.id for s in typed_book.sentences] == [1, 2, 3, 4]
+
+
+def test_word_count_mixes_spacy_and_shared_predicate(typed_book):
+    # heading 2 (Глава, Начало) + paragraph 7 + code 4 (x 1 y 2) + list item 9
+    assert typed_book.word_count == 22

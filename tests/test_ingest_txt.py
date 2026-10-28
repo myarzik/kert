@@ -1,6 +1,7 @@
 import pytest
 
-from kert.compiler.ingest_txt import Ingester, IngestError, TxtIngester
+from kert.compiler.ingest import Ingester, IngestError, IngestResult, RawBlock
+from kert.compiler.ingest_txt import TxtIngester
 
 
 @pytest.fixture
@@ -14,7 +15,12 @@ def write(tmp_path):
 
 
 def ingest(path, lang="ru"):
-    return TxtIngester(lang).ingest(path)
+    """Paragraph texts; a .txt file yields only paragraphs and no title (§14.1)."""
+    result = TxtIngester(lang).ingest(path)
+    assert isinstance(result, IngestResult)
+    assert result.title is None
+    assert all(b == RawBlock("paragraph", b.text) for b in result.blocks)
+    return [b.text for b in result.blocks]
 
 
 def test_txt_ingester_satisfies_ingester_protocol():
