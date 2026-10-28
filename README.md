@@ -20,9 +20,16 @@ first, for example `pandoc book.docx -t markdown -o book.md`.
 
 ## Download a prebuilt build
 
-Each [GitHub Release](https://github.com/myarzik/kert/releases) has
-self-contained builds with Python and both spaCy models included. You don't need
-Python or uv:
+Each [GitHub Release](https://github.com/myarzik/kert/releases) has two
+self-contained builds per platform. Neither needs Python or uv:
+
+- **`kert-reader`**: one file of about 14 MB that reads and inspects `.kert`
+  books. It cannot compile them. Use it where you only read, with books compiled
+  elsewhere.
+- **`kert`**: the full build, an archive with Python and both spaCy models
+  (about 150 MB unpacked). It compiles, reads and inspects.
+
+The full build archives:
 
 | Platform | Archive |
 |---|---|
@@ -30,7 +37,11 @@ Python or uv:
 | Linux x86-64 (glibc 2.35+) | `kert-<version>-linux-x86_64.tar.gz` |
 | Windows x86-64 | `kert-<version>-windows-x86_64.zip` |
 
-Unpack the archive and run `kert` (`kert.exe` on Windows) from the `kert`
+The Reader is `kert-reader-<version>-<platform>` (`.exe` on Windows); on macOS
+and Linux, make it executable first with `chmod +x`. It unpacks itself on each
+start, which adds about half a second.
+
+Unpack the full archive and run `kert` (`kert.exe` on Windows) from the `kert`
 folder. You can also add that folder to your `PATH`. Unpacked, a build takes
 about 150 MB. `SHA256SUMS.txt` in the release lists checksums for the archives.
 

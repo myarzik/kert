@@ -137,9 +137,9 @@ flowchart TD
     subgraph release["release.yml: tag v*.*.* (or manual dry run)"]
         version["Check version<br/>tag == pyproject"]
         reuse["Tests<br/>(calls ci.yml)"]
-        build["Build PyInstaller bundle<br/>linux-x86_64 · windows-x86_64<br/>(+ macos-arm64 if MACOS_CI=true)"]
-        smoke["Smoke test the binary<br/>outside Python: --version,<br/>compile RU/EN, inspect golden"]
-        publish["Publish GitHub Release<br/>archives + SHA256SUMS<br/>+ notes from git-cliff"]
+        build["Build with PyInstaller<br/>full kert (one dir) + kert-reader (one file)<br/>linux-x86_64 · windows-x86_64<br/>(+ macos-arm64 if MACOS_CI=true)"]
+        smoke["Smoke test both binaries outside Python:<br/>full: --version, compile RU/EN, inspect golden<br/>reader: --version, inspect golden, compile refused"]
+        publish["Publish GitHub Release<br/>archives + kert-reader files<br/>+ SHA256SUMS + notes from git-cliff"]
     end
 
     rel --> push --> version
