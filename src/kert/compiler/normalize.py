@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -55,9 +56,11 @@ def normalize(raw: Sequence[RawBlock], lang: Lang) -> list[NormalizedBlock]:
                 continue
         kept.append((block, text))
 
-    # §14.2: each heading of the smallest present level starts a chapter.
-    levels = [b.level or 1 for b, _ in kept if b.kind == "heading"]
-    top = min(levels, default=None)
+    # §14.2: chapters start at the smallest heading level occurring twice
+    # (a lone title heading above them does not count), else the smallest.
+    levels = Counter(b.level or 1 for b, _ in kept if b.kind == "heading")
+    repeated = [level for level, count in levels.items() if count > 1]
+    top = min(repeated or levels, default=None)
     chapter = None
     blocks = []
     for block, text in kept:
