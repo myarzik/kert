@@ -2,6 +2,31 @@
 
 All notable changes to kert. Versions follow [Semantic Versioning](https://semver.org);
 this file is generated from conventional commits by [git-cliff](https://git-cliff.org).
+## [0.2.0] — 2026-10-28
+
+### Features
+
+- **ingest:** Typed raw blocks with chapters and un-chunked headings and code
+- **render:** Render headings bold and code blocks with their layout
+- **ingest:** Add Markdown ingester and choose the ingester by input suffix
+- **ingest:** Add FB2 ingester for .fb2 and .fb2.zip
+- **ingest:** Add EPUB ingester (EPUB 2/3, spine order, lenient XHTML)
+
+### Bug fixes
+
+- **normalize:** Number chapters from the smallest repeated heading level
+
+### Documentation
+
+- **spec:** Add format ingesters work package for Markdown, FB2 and EPUB
+- **spec:** Format the §14.1 code snippet for ruff
+- **readme:** Document Markdown, FB2 and EPUB input formats
+- Add Mermaid diagrams of data flow, reader loop, TDD and release
+
+### Dependencies
+
+- **deps:** Pin markdown-it-py as a direct dependency
+
 ## [0.1.0] — 2026-10-28
 
 ### Features
