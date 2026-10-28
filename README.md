@@ -26,7 +26,7 @@ Python or uv:
 
 | Platform | Archive |
 |---|---|
-| macOS (Apple Silicon) | `kert-<version>-macos-arm64.tar.gz` |
+| macOS (Apple Silicon) | `kert-<version>-macos-arm64.tar.gz` (only when macOS builds are enabled, see [Releasing](#releasing)) |
 | Linux x86-64 (glibc 2.35+) | `kert-<version>-linux-x86_64.tar.gz` |
 | Windows x86-64 | `kert-<version>-windows-x86_64.zip` |
 
@@ -207,6 +207,12 @@ each binary outside any Python environment (`packaging/smoke_package.py`).
 Last, it publishes a GitHub Release with the archives, checksums and the
 changelog section for that version. To build and smoke-test without
 publishing, run the workflow manually from the Actions tab.
+
+macOS runners are opt-in, because they use Actions minutes at 10x the Linux
+rate on private repositories. CI and releases run on Linux and Windows unless
+the repository variable `MACOS_CI` is set to `true` (Settings → Secrets and
+variables → Actions → Variables). Without macOS builds, macOS users install
+from source.
 
 To build locally: `uv run pyinstaller packaging/kert.spec --distpath dist
 --workpath build`.

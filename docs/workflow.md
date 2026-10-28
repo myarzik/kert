@@ -128,7 +128,7 @@ its own task, together with regenerating the goldens.
 flowchart TD
     subgraph ci["ci.yml: push to main, pull request"]
         lint["Lint<br/>ruff check + format"]
-        tests["Tests<br/>ubuntu · macos · windows<br/>(spaCy tests mandatory)"]
+        tests["Tests<br/>ubuntu · windows<br/>(+ macos if MACOS_CI=true)<br/>spaCy tests mandatory"]
     end
 
     rel["scripts/release.sh<br/>git-cliff --bumped-version<br/>uv version · CHANGELOG.md<br/>pytest · ruff · commit · tag"]
@@ -137,7 +137,7 @@ flowchart TD
     subgraph release["release.yml: tag v*.*.* (or manual dry run)"]
         version["Check version<br/>tag == pyproject"]
         reuse["Tests<br/>(calls ci.yml)"]
-        build["Build PyInstaller bundle<br/>macos-arm64 · linux-x86_64 · windows-x86_64"]
+        build["Build PyInstaller bundle<br/>linux-x86_64 · windows-x86_64<br/>(+ macos-arm64 if MACOS_CI=true)"]
         smoke["Smoke test the binary<br/>outside Python: --version,<br/>compile RU/EN, inspect golden"]
         publish["Publish GitHub Release<br/>archives + SHA256SUMS<br/>+ notes from git-cliff"]
     end
