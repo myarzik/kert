@@ -1,20 +1,10 @@
 import re
 from pathlib import Path
-from typing import Protocol, runtime_checkable
 
-from kert.common.errors import KertError
 from kert.common.model import Lang
+from kert.compiler.ingest import IngestError, IngestResult, RawBlock
 
 _BLANK_LINE = re.compile(r"^\s*$")
-
-
-class IngestError(KertError):
-    pass
-
-
-@runtime_checkable
-class Ingester(Protocol):
-    def ingest(self, path: Path) -> list[str]: ...
 
 
 class TxtIngester:
@@ -23,7 +13,7 @@ class TxtIngester:
     def __init__(self, lang: Lang) -> None:
         self.lang = lang
 
-    def ingest(self, path: Path) -> list[str]:
+    def ingest(self, path: Path) -> IngestResult:
         text = self._decode(path.read_bytes(), path)
         paragraphs: list[str] = []
         current: list[str] = []
@@ -36,7 +26,7 @@ class TxtIngester:
                 current.append(line)
         if current:
             paragraphs.append(" ".join(current))
-        return paragraphs
+        return IngestResult(blocks=[RawBlock("paragraph", p) for p in paragraphs])
 
     def _decode(self, data: bytes, path: Path) -> str:
         # utf-8-sig decodes plain UTF-8 identically and also strips a BOM.

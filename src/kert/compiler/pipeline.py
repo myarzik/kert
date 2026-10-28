@@ -10,13 +10,15 @@ from importlib.metadata import version
 from pathlib import Path
 
 import spacy
+from spacy.language import Language
 
 from kert.common.dbschema import SCHEMA_VERSION
 from kert.common.errors import KertError
 from kert.common.model import Block, Lang, Sentence
+from kert.common.text import is_word, whitespace_tokens
 from kert.compiler.candidates import extract_candidates
 from kert.compiler.ingest_txt import TxtIngester
-from kert.compiler.normalize import normalize
+from kert.compiler.normalize import NormalizedBlock, normalize
 from kert.compiler.persist import write_book
 from kert.compiler.segment import MODELS, load_model, segment, token_spans
 
@@ -31,23 +33,43 @@ class CompileSummary:
     elapsed: float
 
 
-def compile_book(
-    input_path: Path, output_path: Path, lang: Lang, *, force: bool = False
-) -> CompileSummary:
-    started = time.perf_counter()
-    if output_path.exists() and not force:
-        raise KertError(f"{output_path} already exists; use --force to overwrite it.")
+@dataclass(frozen=True, slots=True)
+class BookContent:
+    blocks: list[Block]
+    sentences: list[Sentence]
+    word_count: int
 
-    normalized = normalize(TxtIngester(lang).ingest(input_path), lang)
-    nlp = load_model(lang)
 
+# §14.3: headings and code are one unparsed, candidate-free sentence each.
+_UNCHUNKED = {"heading", "code"}
+
+
+def build_book(
+    normalized: Sequence[NormalizedBlock], nlp: Language, lang: Lang
+) -> BookContent:
+    """Segment and extract candidates for typed blocks (§4.4–4.5, §14.3)."""
+    parsed_texts = [b.text for b in normalized if b.type not in _UNCHUNKED]
+    parsed = iter(segment(nlp, parsed_texts))
     blocks: list[Block] = []
     sentences: list[Sentence] = []
     word_count = 0
-    parsed = segment(nlp, [b.text for b in normalized])
-    for block_id, (block, sents) in enumerate(zip(normalized, parsed, strict=True), 1):
-        blocks.append(Block(id=block_id, type=block.type))
-        for seq, sent in enumerate(sents):
+    for block_id, block in enumerate(normalized, 1):
+        blocks.append(Block(id=block_id, type=block.type, chapter=block.chapter))
+        if block.type in _UNCHUNKED:
+            tokens = whitespace_tokens(block.text)
+            word_count += sum(is_word(block.text[s:e]) for s, e in tokens)
+            sentences.append(
+                Sentence(
+                    id=len(sentences) + 1,
+                    block_id=block_id,
+                    seq=0,
+                    text=block.text,
+                    tokens=tokens,
+                    candidates=(),
+                )
+            )
+            continue
+        for seq, sent in enumerate(next(parsed)):
             word_count += sum(1 for t in sent if t.is_alpha or t.like_num)
             sentences.append(
                 Sentence(
@@ -59,10 +81,25 @@ def compile_book(
                     candidates=tuple(extract_candidates(sent, block.type, lang)),
                 )
             )
+    return BookContent(blocks, sentences, word_count)
+
+
+def compile_book(
+    input_path: Path, output_path: Path, lang: Lang, *, force: bool = False
+) -> CompileSummary:
+    started = time.perf_counter()
+    if output_path.exists() and not force:
+        raise KertError(f"{output_path} already exists; use --force to overwrite it.")
+
+    ingested = TxtIngester(lang).ingest(input_path)
+    normalized = normalize(ingested.blocks, lang)
+    nlp = load_model(lang)
+    book = build_book(normalized, nlp, lang)
+    blocks, sentences = book.blocks, book.sentences
 
     meta = {
         "schema_version": SCHEMA_VERSION,
-        "title": input_path.stem,
+        "title": ingested.title or input_path.stem,
         "language": lang,
         "source_format": "txt",
         "source_filename": input_path.name,
@@ -72,7 +109,7 @@ def compile_book(
         "spacy_model": MODELS[lang],
         "spacy_version": spacy.__version__,
         "model_version": nlp.meta["version"],
-        "word_count": str(word_count),
+        "word_count": str(book.word_count),
     }
     _write_atomically(output_path, meta, blocks, sentences)
 

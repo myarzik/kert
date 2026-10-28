@@ -4,13 +4,13 @@ Side effects are not performed here: each transition lists them in
 `state.effects` (advance_log rows, `:set` writes) for the app loop to execute.
 """
 
-import re
 from dataclasses import dataclass, replace
 
 from readchar import key as keys
 
 from kert.common.errors import KertError
 from kert.common.model import Block, ChunkSpan, Sentence
+from kert.common.text import is_word
 from kert.reader.chunker import assemble
 from kert.reader.commands import GotoCommand, QuitCommand, SetCommand, parse_command
 from kert.reader.config import Settings
@@ -19,7 +19,6 @@ from kert.reader.store import Position
 _NEXT = {" ", "j", keys.RIGHT}
 _PREVIOUS = {"b", "k", keys.LEFT}
 _ENTER = {keys.ENTER, keys.CR, keys.LF}
-_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,11 +55,6 @@ class Chunks:
     sentence_pos: tuple[int, ...]  # index of each chunk's sentence in Book.sentences
 
 
-def _is_word(text: str) -> bool:
-    # Approximates the compiler's `is_alpha or like_num` (SPEC_NOTES, Task 8a).
-    return text.isalpha() or _NUMBER.fullmatch(text) is not None
-
-
 def build_chunks(book: Book, width: int) -> Chunks:
     by_id = {s.id: s for s in book.sentences}
     pos = {s.id: i for i, s in enumerate(book.sentences)}
@@ -69,7 +63,7 @@ def build_chunks(book: Book, width: int) -> Chunks:
     for span in spans:
         sentence = by_id[span.sentence_id]
         count = sum(
-            _is_word(sentence.text[start:end])
+            is_word(sentence.text[start:end])
             for start, end in sentence.tokens[span.start_token : span.end_token]
         )
         words.append(count)
