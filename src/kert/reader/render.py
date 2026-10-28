@@ -60,6 +60,8 @@ def _wrap(text: Text, width: int) -> list[Text]:
 def _block_text(state: ReaderState, start: int, end: int, style: str) -> Text:
     pos = state.chunks.sentence_pos
     sentences = state.book.sentences[pos[start] : pos[end - 1] + 1]
+    if state.chunks.block_types[start] == "heading":
+        style = f"bold {style}"  # §14.7
     return Text(" ".join(s.text for s in sentences), style=style)
 
 

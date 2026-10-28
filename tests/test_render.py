@@ -58,6 +58,9 @@ def status(percent, left="", margin=2, width=40):
 # Reading area H = rows - 1; the active chunk's first line sits on row (H - h) // 2.
 
 
+ACTIVE_COLORS = {"white", "black"}  # §7.2 active chunk; headings are bold too
+
+
 def active_rows(state):
     """Rows whose text includes the bold active chunk."""
     console = console_for(state)
@@ -65,7 +68,13 @@ def active_rows(state):
     return [
         row
         for row, line in enumerate(rendered)
-        if any(seg.style and seg.style.bold and seg.text.strip() for seg in line)
+        if any(
+            seg.style
+            and seg.style.bold
+            and seg.style.color.name in ACTIVE_COLORS
+            and seg.text.strip()
+            for seg in line
+        )
     ]
 
 

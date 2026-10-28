@@ -52,12 +52,14 @@ class Chunks:
     words: tuple[int, ...]
     words_before: tuple[int, ...]
     block_ids: tuple[int, ...]
+    block_types: tuple[str, ...]
     sentence_pos: tuple[int, ...]  # index of each chunk's sentence in Book.sentences
 
 
 def build_chunks(book: Book, width: int) -> Chunks:
     by_id = {s.id: s for s in book.sentences}
     pos = {s.id: i for i, s in enumerate(book.sentences)}
+    types = {b.id: b.type for b in book.blocks}
     spans = tuple(assemble(book.sentences, width))
     words, before, total = [], [], 0
     for span in spans:
@@ -74,6 +76,7 @@ def build_chunks(book: Book, width: int) -> Chunks:
         words=tuple(words),
         words_before=tuple(before),
         block_ids=tuple(by_id[s.sentence_id].block_id for s in spans),
+        block_types=tuple(types[by_id[s.sentence_id].block_id] for s in spans),
         sentence_pos=tuple(pos[s.sentence_id] for s in spans),
     )
 
