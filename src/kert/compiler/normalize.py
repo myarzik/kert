@@ -14,6 +14,7 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 # followed by a space (spec §4.2, RU only).
 _RU_SPACED_DASH = re.compile(r"(?:^|(?<= ))[-–](?= )")
 _TRAILING_BLANK_LINES = re.compile(r"(?:\n[ \t]*)+\Z")
+_LEADING_BLANK_LINES = re.compile(r"\A(?:[ \t]*\n)+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,7 @@ def normalize_code(text: str) -> str:
     """Code keeps its layout: NFC and newline unification only (§14.2)."""
     text = unicodedata.normalize("NFC", text)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = _LEADING_BLANK_LINES.sub("", text)
     return _TRAILING_BLANK_LINES.sub("", text)
 
 
