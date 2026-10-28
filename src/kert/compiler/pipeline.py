@@ -17,7 +17,7 @@ from kert.common.errors import KertError
 from kert.common.model import Block, Lang, Sentence
 from kert.common.text import is_word, whitespace_tokens
 from kert.compiler.candidates import extract_candidates
-from kert.compiler.ingest_txt import TxtIngester
+from kert.compiler.ingest import ingester_for
 from kert.compiler.normalize import NormalizedBlock, normalize
 from kert.compiler.persist import write_book
 from kert.compiler.segment import MODELS, load_model, segment, token_spans
@@ -91,7 +91,8 @@ def compile_book(
     if output_path.exists() and not force:
         raise KertError(f"{output_path} already exists; use --force to overwrite it.")
 
-    ingested = TxtIngester(lang).ingest(input_path)
+    ingester, source_format = ingester_for(input_path, lang)
+    ingested = ingester.ingest(input_path)
     normalized = normalize(ingested.blocks, lang)
     nlp = load_model(lang)
     book = build_book(normalized, nlp, lang)
@@ -101,7 +102,7 @@ def compile_book(
         "schema_version": SCHEMA_VERSION,
         "title": ingested.title or input_path.stem,
         "language": lang,
-        "source_format": "txt",
+        "source_format": source_format,
         "source_filename": input_path.name,
         "paragraph_mode": PARAGRAPH_MODE,
         "compiler_version": version("kert"),
