@@ -216,3 +216,12 @@ def test_lone_title_heading_does_not_swallow_chapters():
         ("Chapter II", 2),
         ("b", 2),
     ]
+
+
+def test_code_leading_blank_lines_are_stripped_but_indentation_kept():
+    # EPUB <pre> content often starts with a newline (seen in a real O'Reilly book).
+    raw = [RawBlock("code", "\n  \n    for x in y {\n        f(x);\n    }\n")]
+
+    assert normalize(raw, "en") == [
+        NormalizedBlock(type="code", text="    for x in y {\n        f(x);\n    }"),
+    ]

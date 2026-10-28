@@ -640,7 +640,8 @@ class Ingester(Protocol):
 - `paragraph`, `heading`, `list_item`: §4.2 normalization unchanged (NFC,
   soft hyphen, NBSP, whitespace collapse, RU dash normalization).
 - `code`: NFC and `\r\n`/`\r` → `\n` only; indentation and line breaks are
-  kept verbatim; trailing blank lines stripped.
+  kept verbatim; leading and trailing blank lines stripped (HTML also drops
+  the newline right after `<pre>`), indentation of the first code line kept.
 - Empty blocks are dropped (code: empty after stripping).
 - Block type: `heading`, `code`, `list_item` map 1:1; `paragraph` goes
   through the §4.3 dialogue rule.
