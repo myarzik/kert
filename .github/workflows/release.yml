@@ -51,9 +51,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --group models --group release --locked
-      - name: Build with PyInstaller
+      - name: Build the full bundle (one directory)
         run: uv run pyinstaller packaging/kert.spec --noconfirm --distpath dist --workpath build
-      - name: Smoke-test the binary and archive it
+      - name: Build the Reader (one file)
+        run: uv run pyinstaller packaging/kert-reader.spec --noconfirm --distpath dist --workpath build
+      - name: Smoke-test both binaries and package them
         run: uv run python packaging/smoke_package.py dist ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
@@ -61,6 +63,7 @@ jobs:
           path: |
             dist/kert-*.tar.gz
             dist/kert-*.zip
+            dist/kert-reader-*
           if-no-files-found: error
 
   publish:
