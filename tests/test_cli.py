@@ -191,3 +191,28 @@ def test_compile_unsupported_suffix_is_user_error(tmp_path, out, capsys):
     err = capsys.readouterr().err
     assert ".txt" in err and ".md" in err
     assert not out.exists()
+
+
+# --- Reader-only build: compile is unavailable (§15) ----------------------------
+
+
+@pytest.mark.parametrize("missing", ["kert.compiler.pipeline", "spacy"])
+def test_compile_without_compiler_is_user_error(
+    monkeypatch, tmp_path, out, capsys, missing
+):
+    import sys
+
+    import kert.compiler
+
+    # As in the kert-reader build: the import of the compiler stack fails.
+    monkeypatch.delitem(sys.modules, "kert.compiler.pipeline", raising=False)
+    monkeypatch.delattr(kert.compiler, "pipeline", raising=False)
+    monkeypatch.setitem(sys.modules, missing, None)
+    source = tmp_path / "book.txt"
+    source.write_text("Текст.", encoding="utf-8")
+
+    code = main(["compile", str(source), "-o", str(out), "--lang", "ru"])
+
+    assert code == 1
+    assert "cannot compile" in capsys.readouterr().err
+    assert not out.exists()
