@@ -813,7 +813,8 @@ android/                      Gradle project (Kotlin DSL, version catalog)
 - Gradle wrapper committed and pinned; JDK 17. Exact pins for Kotlin,
   Android Gradle Plugin, Compose BOM and all libraries (same determinism
   policy as §2.1). `applicationId` `io.github.myarzik.kert`, `minSdk` 26,
-  `targetSdk`/`compileSdk` = latest stable at implementation time.
+  `targetSdk` 36, `compileSdk` 37 (raised independently: Compose 1.12
+  requires compiling against API 37+).
 - `core` is testable with the plain JDK (`./gradlew :core:test`), with no Android
   SDK. `app` needs the Android SDK and builds in CI (local SDK optional).
 - Python stays on uv; the two toolchains share only the `.kert` format and

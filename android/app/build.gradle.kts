@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "io.github.myarzik.kert.app"
-    compileSdk = 36
+    compileSdk = 37 // Compose 1.12 (BOM 2026.09) requires compiling against API 37+
 
     defaultConfig {
         applicationId = "io.github.myarzik.kert"
