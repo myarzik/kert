@@ -1,10 +1,11 @@
-"""Smoke-test a frozen kert build, then archive it for release.
+"""Smoke-test the frozen kert builds, then package them for release (§15).
 
 Usage: python packaging/smoke_package.py DIST_DIR TARGET
-  DIST_DIR  directory holding the PyInstaller output folder `kert/`
-  TARGET    platform label for the archive name, e.g. macos-arm64
+  DIST_DIR  PyInstaller output: the full build folder `kert/` and the
+            single-file Reader build `kert-reader[.exe]`
+  TARGET    platform label for the asset names, e.g. linux-x86_64
 
-Runs the binary outside any Python environment and checks the §9 commands
+Runs both binaries outside any Python environment and checks the §9 commands
 against hand-derived goldens shared with the test suite.
 """
 
@@ -26,7 +27,7 @@ INSPECT_GOLDEN = (
 HIDDEN_ENV = ("VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME", "UV_PROJECT_ENVIRONMENT")
 
 
-def run(binary: Path, *args: str, cwd: Path) -> str:
+def run(binary: Path, *args: str, cwd: Path, expect: int = 0) -> str:
     env = {k: v for k, v in os.environ.items() if k not in HIDDEN_ENV}
     result = subprocess.run(
         [str(binary), *args],
@@ -36,15 +37,29 @@ def run(binary: Path, *args: str, cwd: Path) -> str:
         encoding="utf-8",
         check=False,
     )
-    if result.returncode != 0:
+    if result.returncode != expect:
         sys.exit(
-            f"FAIL: kert {' '.join(args)} exited {result.returncode}\n"
-            f"{result.stdout}{result.stderr}"
+            f"FAIL: {binary.name} {' '.join(args)} exited {result.returncode}, "
+            f"expected {expect}\n{result.stdout}{result.stderr}"
         )
-    return result.stdout
+    return result.stdout + result.stderr if expect else result.stdout
 
 
-def smoke(binary: Path, version: str) -> None:
+def check_version(binary: Path, work: Path, version: str) -> None:
+    out = run(binary, "--version", cwd=work).strip()
+    if out != f"kert {version}":
+        sys.exit(f"FAIL: {binary.name} --version printed {out!r}, expected {version}")
+
+
+def check_inspect(binary: Path, work: Path) -> None:
+    out = run(binary, "inspect", "ru.kert", "--sentence", "4", "--width", "6", cwd=work)
+    if out != INSPECT_GOLDEN:
+        sys.exit(
+            f"FAIL: {binary.name} inspect differs:\n{out!r}\n!=\n{INSPECT_GOLDEN!r}"
+        )
+
+
+def smoke(full: Path, reader: Path, version: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         shutil.copy(FIXTURE, work / "book_ru.txt")
@@ -52,18 +67,24 @@ def smoke(binary: Path, version: str) -> None:
             "He went home, although it was raining.\n", encoding="utf-8"
         )
 
-        assert run(binary, "--version", cwd=work).strip() == f"kert {version}"
+        # Full build: compile both languages, inspect against the golden.
+        check_version(full, work, version)
         for txt, out, lang in (
             ("book_ru.txt", "ru.kert", "ru"),
             ("en.txt", "en.kert", "en"),
         ):
-            run(binary, "compile", txt, "-o", out, "--lang", lang, cwd=work)
-        out = run(
-            binary, "inspect", "ru.kert", "--sentence", "4", "--width", "6", cwd=work
-        )
-        if out != INSPECT_GOLDEN:
-            sys.exit(f"FAIL: inspect output differs:\n{out!r}\n!=\n{INSPECT_GOLDEN!r}")
-    print(f"smoke OK: kert {version}")
+            run(full, "compile", txt, "-o", out, "--lang", lang, cwd=work)
+        check_inspect(full, work)
+        print(f"smoke OK: kert {version}")
+
+        # Reader build: reads what the full build compiled; cannot compile.
+        check_version(reader, work, version)
+        check_inspect(reader, work)
+        err = run(reader, "compile", "en.txt", "-o", "x.kert", "--lang", "en",
+                  cwd=work, expect=1)  # fmt: skip
+        if "cannot compile" not in err or (work / "x.kert").exists():
+            sys.exit(f"FAIL: kert-reader compile should refuse:\n{err}")
+        print(f"smoke OK: kert-reader {version}")
 
 
 def main() -> None:
@@ -71,15 +92,18 @@ def main() -> None:
     version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
         "project"
     ]["version"]
-    binary = dist / "kert" / ("kert.exe" if os.name == "nt" else "kert")
-    smoke(binary, version)
+    exe = ".exe" if os.name == "nt" else ""
+    full, reader = dist / "kert" / f"kert{exe}", dist / f"kert-reader{exe}"
+    smoke(full, reader, version)
 
-    name = f"kert-{version}-{target}"
-    archive_format = "zip" if os.name == "nt" else "gztar"
     archive = shutil.make_archive(
-        str(dist / name), archive_format, root_dir=dist, base_dir="kert"
+        str(dist / f"kert-{version}-{target}"),
+        "zip" if os.name == "nt" else "gztar",
+        root_dir=dist,
+        base_dir="kert",
     )
-    print(f"archive: {archive}")
+    single = shutil.copy2(reader, dist / f"kert-reader-{version}-{target}{exe}")
+    print(f"assets: {archive}, {single}")
 
 
 if __name__ == "__main__":
