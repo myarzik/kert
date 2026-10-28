@@ -45,7 +45,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Test, lint and build
         working-directory: android
-        run: ./gradlew :core:test :app:lintDebug :app:assembleDebug --console=plain
+        run: ./gradlew :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
       - uses: actions/upload-artifact@v4
         if: always()
         with:
