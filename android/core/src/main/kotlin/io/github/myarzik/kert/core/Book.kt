@@ -31,16 +31,3 @@ data class BookContent(
     val sentences: List<Sentence>,
     val wordCount: Int,
 )
-
-object KertReader {
-    fun read(db: SqlConnection): BookContent = TODO("task 19")
-}
-
-object Offsets {
-    fun toUtf16(text: String, codePointSpans: List<Pair<Int, Int>>): List<TokenSpan> =
-        TODO("task 19")
-}
-
-object Words {
-    fun isWord(text: String): Boolean = TODO("task 19")
-}
