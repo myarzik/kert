@@ -2,13 +2,10 @@ package io.github.myarzik.kert.app
 
 import android.content.ContentResolver
 import android.net.Uri
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -41,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import io.github.myarzik.kert.core.KertFormatException
 import io.github.myarzik.kert.core.Library
 import io.github.myarzik.kert.core.LibraryEntry
+import io.github.myarzik.kert.core.SettingsDefaults
 import io.github.myarzik.kert.core.StagedBook
 import java.io.IOException
 import java.text.DateFormat
@@ -52,8 +50,15 @@ import kotlinx.coroutines.withContext
 
 /** Library ↔ reader navigation with book import (§16.4). */
 @Composable
-fun KertApp(library: Library, resolver: ContentResolver, incoming: MutableState<Uri?>) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+fun KertApp(
+    library: Library,
+    resolver: ContentResolver,
+    incoming: MutableState<Uri?>,
+    defaults: SettingsDefaults,
+    host: ReaderHost,
+) {
+    val dark = isSystemInDarkTheme()
+    MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
         val scope = rememberCoroutineScope()
         val snackbar = remember { SnackbarHostState() }
         var books by remember { mutableStateOf<List<LibraryEntry>?>(null) }
@@ -101,8 +106,10 @@ fun KertApp(library: Library, resolver: ContentResolver, incoming: MutableState<
 
         val open = reading
         if (open != null) {
-            BackHandler { reading = null; scope.launch { refresh() } }
-            ReaderPlaceholder(open)
+            ReaderScreen(open, defaults, dark, host, onBack = {
+                reading = null
+                scope.launch { refresh() }
+            })
         } else {
             LibraryScreen(
                 books = books,
@@ -196,14 +203,5 @@ private fun progress(entry: LibraryEntry): String {
     val read = entry.lastRead?.let {
         " · " + DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault()).format(Date(it * 1000))
     }.orEmpty()
-    return String.format(Locale.getDefault(), "%.1f%%", percent) + read
-}
-
-/** Stand-in until the reading screen lands (§16.8, task 23). */
-@Composable
-private fun ReaderPlaceholder(entry: LibraryEntry) {
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-        Text(entry.title, style = MaterialTheme.typography.headlineSmall)
-        Text("The reading screen arrives in the next build.")
-    }
+    return String.format(Locale.ROOT, "%.1f%%", percent) + read
 }

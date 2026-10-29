@@ -98,7 +98,8 @@ class ReaderScreenTest {
         scenario.key(KeyEvent.KEYCODE_VOLUME_DOWN)
         waitForActive("На улице было пусто.")
         scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
-        waitFor(hasText("19.4%", substring = true)) // 6 of 31 words before
+        waitFor(hasText("29.0%", substring = true)) // 9 of 31 words before (2 + 7)
+        waitFor(hasText("book_ru")) // the row being clicked, after the list settles
 
         compose.onNodeWithText("book_ru").performClick()
         waitForActive("На улице было пусто.")
