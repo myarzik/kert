@@ -29,6 +29,13 @@
                 <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="application/x-sqlite3" />
                 <data android:mimeType="application/vnd.sqlite3" />
+                <!-- Books compiled on the phone (§16 spike). -->
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/x-fictionbook+xml" />
+                <data android:mimeType="application/x-fictionbook" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/x-markdown" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
 
             <!-- Share a .kert file to kert. -->
@@ -38,6 +45,13 @@
                 <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="application/x-sqlite3" />
                 <data android:mimeType="application/vnd.sqlite3" />
+                <!-- Books compiled on the phone (§16 spike). -->
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/x-fictionbook+xml" />
+                <data android:mimeType="application/x-fictionbook" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/x-markdown" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
     </application>

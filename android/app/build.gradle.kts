@@ -2,6 +2,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.chaquopy)
 }
 
 android {
@@ -14,6 +15,11 @@ android {
         targetSdk = 36
         versionCode = 200 // major*10000 + minor*100 + patch (§16.7)
         versionName = "0.2.0"
+
+        ndk {
+            // Phones are arm64; x86_64 keeps the emulator usable.
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     compileOptions {
@@ -43,6 +49,29 @@ android {
                     "--add-opens=java.base/java.io=ALL-UNNAMED",
                 )
             }
+        }
+    }
+}
+
+// On-device compiler (spike): the Python compiler from ../../src on Python 3.10,
+// the only version with Android wheels for spaCy in the Chaquopy repository.
+// The build needs `python3.10` on PATH (pip and bytecode compilation).
+chaquopy {
+    defaultConfig {
+        version = "3.10"
+        pip {
+            install("spacy==3.8.7")
+            install("click") // spaCy's CLI imports it; newer typer no longer pulls it in
+            install("markdown-it-py==4.2.0")
+            // msgpack ships only an sdist with a C extension: use the pure-Python build.
+            install("wheels/msgpack-1.2.3-py3-none-any.whl")
+            install("https://github.com/explosion/spacy-models/releases/download/ru_core_news_sm-3.8.0/ru_core_news_sm-3.8.0-py3-none-any.whl")
+            install("https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl")
+        }
+    }
+    sourceSets {
+        getByName("main") {
+            srcDir("../../src")
         }
     }
 }

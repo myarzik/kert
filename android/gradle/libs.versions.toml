@@ -9,6 +9,7 @@ junit = "6.1.3"
 sqlite-jdbc = "3.53.4.0"
 kotlinx-serialization = "1.12.0"
 robolectric = "4.17"
+chaquopy = "17.2.0"
 junit4 = "4.13.2"
 androidx-test-core = "1.7.0"
 androidx-test-ext = "1.3.0"
@@ -37,3 +38,4 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }

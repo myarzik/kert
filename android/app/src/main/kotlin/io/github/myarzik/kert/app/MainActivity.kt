@@ -22,7 +22,8 @@ class MainActivity : ComponentActivity() {
         val books = File(filesDir, "books").apply { mkdirs() }
         val library = Library(books.toPath()) { AndroidSqlConnection.open(it.toFile()) }
         val defaults = PrefsDefaults(this)
-        setContent { KertApp(library, contentResolver, incoming, defaults, readerHost) }
+        val compiler = ChaquopyCompiler(this)
+        setContent { KertApp(library, contentResolver, incoming, defaults, readerHost, compiler, cacheDir) }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean =
