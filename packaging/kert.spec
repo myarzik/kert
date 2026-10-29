@@ -10,8 +10,6 @@ for package in (
     "thinc",
     "ru_core_news_sm",
     "en_core_web_sm",
-    "pymorphy3",
-    "pymorphy3_dicts_ru",
 ):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
     datas += pkg_datas
@@ -26,7 +24,9 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    excludes=["pytest", "_pytest", "ruff", "PyInstaller"],
+    # The RU lemmatizer is excluded at load time (§4.4): no pymorphy3 or its
+    # CC BY-SA dictionaries in the bundle.
+    excludes=["pytest", "_pytest", "ruff", "PyInstaller", "pymorphy3", "pymorphy3_dicts_ru"],
 )
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="kert", console=True)

@@ -21,7 +21,7 @@ def _model_requirement(lang: Lang) -> str:
 
 def load_model(lang: Lang) -> Language:
     try:
-        return spacy.load(MODELS[lang], disable=["ner", "lemmatizer"])
+        return spacy.load(MODELS[lang], exclude=["ner", "lemmatizer"])
     except OSError as exc:
         raise KertError(
             f"spaCy model {MODELS[lang]!r} for --lang {lang} is not installed.\n"
