@@ -55,3 +55,20 @@ def test_token_spans_index_into_sentence_text(nlp, paragraphs):
 
 def test_empty_input_yields_no_blocks(nlp_en):
     assert segment(nlp_en, []) == []
+
+
+def test_ru_model_loads_without_the_lemmatizer_dictionaries(nlp_ru):
+    # exclude (not disable): pymorphy3 and its CC BY-SA dictionaries are never
+    # imported, so frozen builds need not ship them (spec §4.4, §15).
+    import subprocess
+    import sys
+
+    probe = (
+        "import sys; from kert.compiler.segment import load_model; "
+        "load_model('ru'); print('pymorphy3' in sys.modules)"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+
+    assert out.stdout.strip() == "False"

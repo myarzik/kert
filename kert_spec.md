@@ -200,8 +200,11 @@ long books.
 - Else → `paragraph`.
 
 ### 4.4 Segment
-- Run spaCy pipeline (parser enabled, NER disabled for speed:
-  `nlp = spacy.load(model, disable=["ner", "lemmatizer"])`).
+- Run spaCy pipeline (parser enabled, NER and lemmatizer left out:
+  `nlp = spacy.load(model, exclude=["ner", "lemmatizer"])`). `exclude`, not
+  `disable`: the components are never loaded, so the RU lemmatizer's
+  pymorphy3 dictionaries (CC BY-SA data) are not imported and need not ship
+  in frozen builds.
 - Use `nlp.pipe(paragraph_texts, batch_size=64)` for throughput.
 - Sentence boundaries: spaCy's dependency-parser sentencizer (default for
   these models). Each sentence becomes a `sentences` row; store token char
