@@ -20,7 +20,7 @@ def notices():
 def test_reader_build_lists_its_runtime_stack_with_license_texts(notices):
     text = notices.render("reader")
 
-    for name in ("rich", "typer", "click", "readchar", "msgpack", "platformdirs"):
+    for name in ("rich", "typer", "shellingham", "readchar", "msgpack", "platformdirs"):
         assert f"\n{name} " in text, name
     assert "Permission is hereby granted, free of charge" in text  # MIT body
     assert "PYTHON SOFTWARE FOUNDATION LICENSE" in text

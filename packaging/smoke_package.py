@@ -9,6 +9,7 @@ Runs both binaries outside any Python environment and checks the §9 commands
 against hand-derived goldens shared with the test suite.
 """
 
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -96,6 +97,13 @@ def main() -> None:
     full, reader = dist / "kert" / f"kert{exe}", dist / f"kert-reader{exe}"
     smoke(full, reader, version)
 
+    # Licenses travel with the binaries (§15): kert's own and every bundled
+    # component's; the Reader's components are a subset of the full build's.
+    notices = _notices().render("full")
+    shutil.copy(ROOT / "LICENSE", dist / "kert" / "LICENSE")
+    (dist / "kert" / "THIRD_PARTY_NOTICES.txt").write_text(notices, encoding="utf-8")
+    (dist / f"THIRD_PARTY_NOTICES-{target}.txt").write_text(notices, encoding="utf-8")
+
     archive = shutil.make_archive(
         str(dist / f"kert-{version}-{target}"),
         "zip" if os.name == "nt" else "gztar",
@@ -104,6 +112,14 @@ def main() -> None:
     )
     single = shutil.copy2(reader, dist / f"kert-reader-{version}-{target}{exe}")
     print(f"assets: {archive}, {single}")
+
+
+def _notices():
+    path = Path(__file__).with_name("third_party_notices.py")
+    spec = importlib.util.spec_from_file_location("third_party_notices", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 if __name__ == "__main__":

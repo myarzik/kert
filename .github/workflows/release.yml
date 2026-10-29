@@ -64,6 +64,7 @@ jobs:
             dist/kert-*.tar.gz
             dist/kert-*.zip
             dist/kert-reader-*
+            dist/THIRD_PARTY_NOTICES-*.txt
           if-no-files-found: error
 
   publish:
