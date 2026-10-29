@@ -18,6 +18,9 @@ Input formats: plain text, Markdown, FB2 and EPUB, in Russian or English. You
 advance through the text manually. For other formats, convert to one of these
 first, for example `pandoc book.docx -t markdown -o book.md`.
 
+An Android reader (Kotlin, Jetpack Compose) for `.kert` files lives in
+[`android/`](android/). It is in early testing and has no published build yet.
+
 ## Download a prebuilt build
 
 Each [GitHub Release](https://github.com/myarzik/kert/releases) has two
@@ -227,6 +230,34 @@ from source.
 
 To build locally: `uv run pyinstaller packaging/kert.spec --distpath dist
 --workpath build`.
+
+## How this was built
+
+kert is a personal project built to solve my own trouble with focus on long
+texts. It is developed with an AI coding assistant ([Claude
+Code](https://claude.com/claude-code)): I own the product decisions, the
+specification and the acceptance testing; most of the code and tests were
+written by the assistant under that direction. Every such commit says so in its
+`Co-Authored-By` trailer.
+
+The process keeps that honest and reviewable:
+
+- [`kert_spec.md`](kert_spec.md) is the single source of truth. Where the spec
+  was silent or wrong, the resolution is recorded in
+  [`SPEC_NOTES.md`](SPEC_NOTES.md).
+- Strict TDD: a failing `test(...)` commit first, then the `feat(...)` commit.
+  The golden outputs are hand-derived from the spec, never frozen from the
+  implementation.
+- The Kotlin port of the reading engine is cross-checked against the Python
+  reference on every fixture and width (`scripts/export_android_reference.py`).
+- CI runs lint and tests on Linux and Windows (macOS when enabled). Each release
+  ships smoke-tested binaries.
+
+## License
+
+kert is released under the [MIT License](LICENSE). Prebuilt binaries bundle
+third-party components under their own licenses. Each release includes their
+notices (`THIRD_PARTY_NOTICES-<platform>.txt`, also inside the full archive).
 
 ## Manual acceptance checklist
 
