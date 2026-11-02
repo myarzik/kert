@@ -29,6 +29,12 @@ jobs:
   build:
     name: Core tests, lint, APK
     runs-on: ubuntu-latest
+    env:
+      # Release signing (§16.7); empty on forks, where the release APK stays unsigned.
+      KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
@@ -43,9 +49,14 @@ jobs:
           distribution: temurin
           java-version: "21"  # Robolectric needs Java 21 for SDK 36
       - uses: gradle/actions/setup-gradle@v5
+      - name: Release keystore
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/kert.jks"
+          echo "KERT_ANDROID_KEYSTORE=$RUNNER_TEMP/kert.jks" >> "$GITHUB_ENV"
       - name: Test, lint and build
         working-directory: android
-        run: ./gradlew :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
+        run: ./gradlew :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease --console=plain
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -56,4 +67,9 @@ jobs:
         with:
           name: kert-android-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kert-android-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error

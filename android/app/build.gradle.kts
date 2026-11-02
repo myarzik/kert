@@ -4,6 +4,17 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// versionName is the Python package version; versionCode = major*10000 + minor*100 + patch (§16.7).
+val pyproject = rootProject.file("../pyproject.toml")
+val kertVersion =
+    Regex("""(?m)^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"""")
+        .find(providers.fileContents(layout.projectDirectory.file(pyproject.path)).asText.get())
+        ?.destructured
+        ?: error("no x.y.z version in $pyproject")
+
+// Release signing comes from CI (§16.7); without a keystore the release APK stays unsigned.
+val keystore = providers.environmentVariable("KERT_ANDROID_KEYSTORE").orNull
+
 android {
     namespace = "io.github.myarzik.kert.app"
     compileSdk = 37 // Compose 1.12 (BOM 2026.09) requires compiling against API 37+
@@ -12,8 +23,19 @@ android {
         applicationId = "io.github.myarzik.kert"
         minSdk = 26
         targetSdk = 36
-        versionCode = 200 // major*10000 + minor*100 + patch (§16.7)
-        versionName = "0.2.0"
+        val (major, minor, patch) = kertVersion
+        versionCode = major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
+        versionName = "$major.$minor.$patch"
+    }
+
+    if (keystore != null) {
+        signingConfigs.create("release") {
+            storeFile = file(keystore)
+            storePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").get()
+            keyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").get()
+            keyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").get()
+        }
+        buildTypes.getByName("release").signingConfig = signingConfigs.getByName("release")
     }
 
     compileOptions {
@@ -31,6 +53,7 @@ android {
             all {
                 // Reference fixtures from the Python implementation (§16.6).
                 it.systemProperty("kert.reference", rootProject.file("../build/android-reference").path)
+                it.systemProperty("kert.pyproject", pyproject.path)
                 // Robolectric 4.17 needs exactly Java 21 for SDK 36 sandboxes.
                 it.javaLauncher.set(
                     project.extensions.getByType<JavaToolchainService>().launcherFor {

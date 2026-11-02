@@ -19,7 +19,8 @@ advance through the text manually. For other formats, convert to one of these
 first, for example `pandoc book.docx -t markdown -o book.md`.
 
 An Android reader (Kotlin, Jetpack Compose) for `.kert` files lives in
-[`android/`](android/). It is in early testing and has no published build yet.
+[`android/`](android/). It reads books compiled on the desktop; it cannot
+compile. It is in early testing.
 
 ## Download a prebuilt build
 
@@ -56,6 +57,11 @@ The builds are not code-signed:
   kert starts instantly.
 - **Windows** SmartScreen may warn on first run: choose *More info → Run
   anyway*.
+
+A release can also include **`kert-android-<version>.apk`**, the Android reader
+(Android 8.0+). Install it by opening the file on the phone and allowing
+installs from that app. Updates install over the previous version because each
+release is signed with the same key.
 
 ## Install from source
 
@@ -230,6 +236,27 @@ from source.
 
 To build locally: `uv run pyinstaller packaging/kert.spec --distpath dist
 --workpath build`.
+
+The Android app takes its version from `pyproject.toml` (`versionCode` =
+major·10000 + minor·100 + patch), so `scripts/release.sh` versions it too. The
+release attaches a signed `kert-android-<version>.apk` only when these
+repository secrets are set; without them the release has no APK:
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | the release keystore, `base64 -i release.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore password |
+| `ANDROID_KEY_ALIAS` | key alias |
+| `ANDROID_KEY_PASSWORD` | key password |
+
+Create the keystore once and keep a backup: a lost key means users must
+uninstall the app to update. `keytool -genkeypair -keystore release.jks -alias
+kert -keyalg RSA -keysize 4096 -validity 10000`. The Android workflow builds a
+debug and a release APK on every change under `android/`; the release APK is
+signed when the secrets are available and unsigned otherwise. To sign a local
+build, set `KERT_ANDROID_KEYSTORE` to the keystore path plus the three password
+and alias variables above, then run `./gradlew :app:assembleRelease` in
+`android/`.
 
 ## How this was built
 
