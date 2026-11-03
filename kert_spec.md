@@ -36,8 +36,8 @@ context. It ships as two decoupled components:
 | D8 | Reader state (position, settings, advance log) is stored inside the `.kert` file, in tables isolated from content tables. Content tables are write-never after compilation. `PRAGMA journal_mode=WAL`. |
 | D9 | Split-point candidates stored as a msgpack blob column on `sentences` (not a normalized table) — optimized for the single full-scan read at book open. |
 | D10 | RU dialogue MVP rule: paragraph starting with em-dash `—` → block type `dialogue`; em-dash boundaries inside the paragraph are split candidates with maximum weight; leading dash preserved in rendering. Speaker detection is out of scope. |
-| D11 | Status line MVP content: book progress percent only. |
-| D12 | No reliance on ANSI DIM (`\x1b[2m`). Explicit colors: active chunk `bold white`, context `grey50` (Rich color, degrades safely on 8-color terminals). |
+| D11 | Status line MVP content: book progress percent only. Amended by §17.6 (goal segment). |
+| D12 | No reliance on ANSI DIM (`\x1b[2m`). Explicit colors: active chunk `bold white`, context `grey50` (Rich color, degrades safely on 8-color terminals). Amended by §17.5: 256-palette colors only, contrast floor. |
 
 ### Non-goals (MVP)
 - EPUB/FB2/Markdown ingestion (documented workaround: convert via pandoc to
@@ -164,6 +164,7 @@ CREATE TABLE advance_log (
     direction   INTEGER NOT NULL           -- +1 forward, -1 backward
 );
 -- Capped: Reader deletes oldest rows beyond 10 000 on session close.
+-- Amended by §17.4: `kind`, `mode` columns and the `checkpoints` table.
 ```
 
 Rationale for `candidates` as blob (D9): Reader performs exactly one full
@@ -315,6 +316,8 @@ W = 6, 8, 12.
 
 ### 7.2 Styles (D12) — two hardcoded theme presets
 
+**Superseded by §17.5** (presets and contrast rules).
+
 Selected via `:set theme=dark|light`; default `dark`. Stored like other
 settings (§8.4).
 
@@ -351,6 +354,7 @@ presets in MVP; no custom colors.
 | `q` | quit (persist state) |
 
 Every forward/backward action appends one `advance_log` row (D5).
+Amended by §17.2–§17.4 (modes, `(`, `)`, `p`, `kind`/`mode` columns).
 
 ### 8.2 Command line (`:`)
 Minimal parser, commands for MVP:
@@ -359,6 +363,7 @@ Minimal parser, commands for MVP:
 - `:goto P` — P is percent (float 0–100, word-based); jump to nearest chunk.
 - `:q` — quit.
 Unknown command → error message in status area, never crash.
+Amended by §17.6 (`:goal`) and §17.10 (new `:set` keys).
 
 ### 8.4 Settings storage & precedence
 
@@ -426,6 +431,9 @@ real books.
 ## 11. Roadmap (context for implementer — do NOT build now)
 
 ### 11.1 Post-MVP validation gate & optional pivot
+
+The validation protocol below is **replaced by §17.9**; the branch
+definitions stay.
 
 The MVP engine (txt → chunking → Reader) is positioning-neutral. Immediately
 after the MVP is usable, a mandatory validation step decides the roadmap
@@ -944,3 +952,255 @@ android/                      Gradle project (Kotlin DSL, version catalog)
     session lifecycle (position, `advance_log` trim, checkpoint).
 23. `app` reading screen: tape layout, gestures, volume keys, settings panel.
 24. Signing and release integration; README "Android" section.
+
+---
+
+## 17. Reading Enhancements and Reading Modes (work package)
+
+Approved 2026-11-03. Source: the proposal "kert — Reading Enhancements:
+Evidence × Cost Matrix and Pareto Selection" (2026-11-03), merged with
+corrections against the shipped code (0.2.0). **Desktop Reader first**; the
+Android port (§16) follows as separate tasks (§17.11). Until then the Android
+app keeps its 0.2 behavior and stays compatible with migrated books (§17.4).
+
+### 17.1 Selection
+
+| Status | Items |
+|---|---|
+| Selected | R1 cheap regressions, R2 contrast floor, R5 session goal + ETA, R3 recap, R4 retrieval-first recap, R6 checkpoint recall, reading modes (§17.2, generalizes the proposal's V1 plain-mode control) |
+| Deferred | R7 outline preview — unblocked (headings exist since 0.2.0), next candidate after this package. R8 resume-last — a shell alias, no spec change (O13). R10 adaptive width, R11 ladder layout — only behind a positive validation gate (§17.9). R9 fatigue detector — only if `advance_log` analysis shows a usable signal |
+| Rejected | R12 head-word emphasis (Bionic Reading: no effect), R13 summary-writing checkpoint (superseded by R6), R14 RSVP auto-advance (speed–accuracy trade-off; supersedes the RSVP items of D5 and §11.2) |
+
+Evidence basis per item: see the proposal's matrix; the sources are Schotter,
+Tran & Rayner 2014; Rayner et al. 2016; Dunlosky et al. 2013; Kivetz,
+Urminsky & Zheng 2006; Tate et al. 2019; Readwise 2022; Acta Psychologica 247
+(2024); WCAG 2.x contrast formula.
+
+### 17.2 Reading modes
+
+`:set mode=chunk|sentence|paragraph`, default `chunk`. The mode sets the
+**unit** the Reader highlights and steps through:
+
+| Mode | Unit | Rest-of-block style |
+|---|---|---|
+| `chunk` | assembled chunk (§6) | the block's other chunks |
+| `sentence` | whole sentence | the block's other sentences |
+| `paragraph` | whole block | none — the entire block is the active unit |
+
+- `Space`/`j`/`→` and `b`/`k`/`←` move by one unit in every mode.
+- Percent and `:goto` work on units: words before the active unit's start.
+- Switching mode re-resolves the position to the unit containing the
+  previously active unit's start (§5 step 4 rule). Saved position stays
+  `(sentence_id, start_token)` of the active unit's start.
+- `:set width=N` is accepted in every mode (stored as usual) and takes effect
+  in `chunk` mode.
+- Un-chunked blocks (§14.3) are one unit per sentence in `chunk` and
+  `sentence` modes, as today.
+- `mode` is stored per book in `reader_state` only, **never in the TOML**:
+  it is also the experimental condition of §17.9. This is the one exception to
+  the §8.4 write-through rule.
+- `paragraph` mode is the proposal's V1 plain-mode control.
+
+### 17.3 R1 — Cheap regressions (keys, amends §8.1)
+
+| Key | Action | `kind` |
+|---|---|---|
+| `(` | If the active unit does not start at token 0 of its sentence, go to the unit that starts that sentence; otherwise go to the unit containing the start of the previous sentence | `sentence` |
+| `)` | Go to the first unit that starts after the active unit's last sentence | `sentence` |
+| `p` | **Peek**: render the previous unit in the active style and the real active unit in rest style. The position does not change. The next key leaves peek and is consumed (not executed) | `peek` |
+
+- In `paragraph` mode `(`/`)` therefore move by block, and peek shows the
+  previous block.
+- `readchar` has no key-up events, so peek is a toggle, not hold-to-peek.
+- `ReaderState.peek` is transient and never persisted. Peek at the first unit
+  of the book is a no-op.
+
+### 17.4 `advance_log` amendment and migration (amends §3, D5)
+
+```sql
+CREATE TABLE advance_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          REAL    NOT NULL,
+    sentence_id INTEGER NOT NULL,
+    chunk_words INTEGER NOT NULL,          -- words of the unit just left (peek: of the peeked unit)
+    direction   INTEGER NOT NULL,          -- +1 / -1 / 0 (peek)
+    kind        TEXT    NOT NULL DEFAULT 'step'
+                CHECK (kind IN ('step','sentence','block','jump','peek')),
+    mode        TEXT    NOT NULL DEFAULT 'chunk'
+                CHECK (mode IN ('chunk','sentence','paragraph'))
+);
+
+CREATE TABLE checkpoints (                 -- §17.8, mutable (D8)
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                   REAL    NOT NULL,
+    trigger              TEXT    NOT NULL CHECK (trigger IN ('open','goal','quit','heading')),
+    mode                 TEXT    NOT NULL CHECK (mode IN ('chunk','sentence','paragraph')),
+    span_start_sentence  INTEGER NOT NULL, -- first sentence of the span
+    span_end_sentence    INTEGER NOT NULL, -- active sentence at the checkpoint
+    span_words           INTEGER NOT NULL,
+    recall_text          TEXT,             -- NULL for 'open' or when skipped
+    self_rating          INTEGER CHECK (self_rating IN (0,1,2))  -- n / p / y; NULL = skipped
+);
+```
+
+- `kind`: `step` = `Space`/`b` family (one unit), `sentence` = `(`/`)`,
+  `block` = `J`/`K`, `jump` = `gg`/`G`/`:goto`, `peek` = `p`. Every key that
+  changes the position (or enters peek) writes exactly one row; a no-op key
+  writes none. `mode` is the mode in force.
+- Correction to the proposal: it named the unit step `chunk` and logged
+  plain-mode steps as `block`. With three modes the step kind is `step` and
+  the unit is given by `mode`.
+- **Migration** (correction: 0.1/0.2 books exist). The compiler creates new
+  books with the DDL above. On open the Reader adds what an older book lacks:
+  `ALTER TABLE advance_log ADD COLUMN kind …` / `… mode …` with the defaults
+  above (old rows were all chunk steps), and `CREATE TABLE IF NOT EXISTS
+  checkpoints`. Only mutable tables change, so `schema_version` stays `'1'`;
+  readers that insert the original four columns (Android 0.2) keep working.
+
+### 17.5 R2 — Contrast floor (replaces the §7.2 table; amends D12)
+
+All theme colors come from the fixed xterm-256 palette (indices 16–255), so
+the hierarchy does not depend on the terminal's color scheme (ANSI `white`
+and `black` are remapped by schemes; Campbell renders `white` as `#CCCCCC`).
+
+Rules, enforced by tests against pure `#000` (dark) / `#FFF` (light), WCAG
+2.x contrast ratio:
+
+| Pair | Minimum |
+|---|---|
+| Rest of block vs background | 4.5 |
+| Neighbor blocks, status line vs background | 3.0 |
+| Active unit vs rest of block | 3.0 |
+| Rest of block vs neighbor blocks | 1.25 |
+
+| Element | `dark` | `light` |
+|---|---|---|
+| Active unit | `bold grey93` | `bold grey3` |
+| Rest of active block | `grey50` | `grey46` |
+| Neighbor blocks | `grey39` | `grey54` |
+| Status line | `grey50` | `grey46` |
+
+Resulting ratios: dark 18.1 / 5.32 / 3.44, active/rest 3.40, rest/neighbor
+1.54; light 20.0 / 4.54 / 3.45, active/rest 4.41, rest/neighbor 1.32.
+The `…` truncation row of the proposal is dropped (center focus, §7.1, has no
+markers). The test oracle takes each color's RGB from Rich's 256-color
+palette, so the presets hold Rich color names only. On tinted backgrounds the
+light rest color is 4.35 on One Half Light; accepted (O14).
+
+### 17.6 R5 — Session goal and ETA (amends D11, §7.1 status line, §8.2)
+
+| Command | Effect |
+|---|---|
+| `:goal Nm` | goal of N minutes of active reading time (N 1–600) |
+| `:goal Nw` | goal of N words from the current position (N 1–100000) |
+| `:goal off` | clear the goal |
+| `:goal again` | re-arm the last goal from the current position |
+
+- Session-scoped, never persisted. Optional TOML key `default_goal`
+  (`"15m"` / `"2000w"`), absent by default, arms a goal at session start.
+- **Tempo** `tempo_wps(rows) -> float | None` (pure): the last 200 rows with
+  `kind='step'`, `direction=+1` and `mode` = the current mode, ordered by
+  `ts`; dwell_i = ts_i − ts_{i−1}; discard dwell < 0.15 s and > 60 s; sample
+  = `chunk_words` / dwell; return the median, or `None` with fewer than 30
+  samples.
+- **Progress**: a words goal counts words between the arming position and the
+  active unit's start (word-based, like percent). A minutes goal counts active
+  time: the sum of the kept dwells of qualifying rows written since arming.
+- **Status line**: a goal segment right-aligned before `NN.N%`:
+  `▸ 640 w · ~4 min` (words goal) or `▸ 6 min · ~1100 w` (minutes goal); the
+  `~` part is omitted while tempo is `None`. No book-level ETA.
+- **Goal reached**: message `goal reached — :goal again`; an R6 checkpoint
+  (trigger `goal`) if `recall=on`; no automatic re-arming.
+
+### 17.7 R3 + R4 — Recap and retrieval-first recap on re-entry (amends §5)
+
+After startup step 4, when the position is not the book's first unit:
+
+```
+gap = now − max(advance_log.ts)   (empty log → no gap, no recall prompt)
+gap ≥ recall_gap_minutes AND recall=on
+  ├─ yes ─► [R4] pane cleared; status "recall: what was happening? — any key"
+  │         ─► "y recalled / p partial / n blank / Esc skip"
+  │         ─► checkpoint row (trigger 'open', recall_text NULL)
+  │         ─► [R3] recap frame (if recap=on)
+  └─ no ──► recap=on ? [R3] recap frame : reading
+```
+
+- **Recap frame**: the last `recap_words` words before the active unit, whole
+  units only (at least one unit), possibly spanning earlier blocks; rendered
+  in rest style ending just above the center row, status `recap — any key`.
+  The key that dismisses it is consumed. At the book's first unit: no recap.
+- R4 asks for no typing; the recall is mental and only the 1-key rating is
+  recorded.
+
+### 17.8 R6 — Checkpoint recall
+
+Triggers: `goal` (§17.6), `quit` (`q`, `:q`, Ctrl+C, when the session
+advanced ≥ 500 words — position-based, from the session's start position to
+the active unit), `open` (§17.7), `heading` (reserved). Every trigger requires
+`recall=on`.
+
+```
+pane cleared; "recall (one line, Enter to submit, Esc to skip):"
+  ─► line input (the `:` command-line editor)
+  ─► "y / p / n"  (Esc skips the rating)
+  ─► checkpoint row ─► continue reading (goal) | exit (quit)
+```
+
+- Esc at the line prompt skips the whole checkpoint (no row).
+- Ctrl+C: the first one offers the quit checkpoint; Esc or a second Ctrl+C
+  skips it. Position persistence on exit is unchanged (§8.3).
+- Span: from the session start (or the previous checkpoint) to the active
+  sentence; `span_words` is the word distance between them.
+- The line editor accepts Backspace as both `\x08` and `\x7f` and inserts
+  pasted bursts character by character; Cyrillic arrives as Unicode on all
+  platforms (Windows: `msvcrt.getwch`).
+- Deferred: the proposal's `r` replay of the span after a goal checkpoint.
+- Checkpoints are measurements, kept apart from future `annotations`.
+
+### 17.9 Validation gate (replaces the §11.1 protocol)
+
+1. Within-subject, alternating per session: odd sessions `mode=chunk`, even
+   `mode=paragraph`. One technical and one fiction book, ≥ 6 sessions per mode
+   per book, each with `:goal 15m` and `recall=on`. Alternate within the same
+   chapter range.
+2. Metrics: comprehension proxy = `checkpoints.self_rating` per mode
+   (`goal` + `open`); tempo = `tempo_wps` per session; completion = share of
+   sessions reaching the goal; regressions = rows with `kind IN
+   ('sentence','peek')` and `direction ≤ 0` per 1 000 words.
+3. Chunk mode passes if comprehension is no worse and tempo or completion is
+   ≥ 15 % better in both books; a gain in one book only points to Branch F or N.
+4. Threats: n = 1, self-rating bias, novelty (discard the first 2 sessions
+   per mode), text difficulty. A go/no-go signal, not evidence.
+
+### 17.10 Settings (amends §8.2, §8.4)
+
+| Key | Default | Range | Layers |
+|---|---|---|---|
+| `mode` | `chunk` | `chunk`/`sentence`/`paragraph` | book only |
+| `recap` | `on` | `on`/`off` | book + TOML |
+| `recap_words` | `40` | 10–120 | book + TOML |
+| `recall` | `on` | `on`/`off` | book + TOML |
+| `recall_gap_minutes` | `60` | 5–1440 | book + TOML |
+| `default_goal` | absent | `Nm`/`Nw` | TOML only |
+
+`:set` takes the key names as written (`:set recap_words=60`); `width` and
+`theme` keep their names. The TOML write-through rewrites every TOML-layer
+key, keeping the others' current values.
+
+### 17.11 Task order (strict TDD per §13.1)
+
+25. Spec merge (this section), SPEC_NOTES entries.
+26. R2: `reader/theme.py`, presets, contrast tests (`test_theme.py`).
+27. `advance_log` `kind`/`mode`, `checkpoints` DDL, Reader-side migration
+    (`test_dbschema`, `test_store`).
+28. R1 keys and per-key logging (`test_state`, `test_app`/roundtrip).
+29. Reading modes `chunk`/`sentence`/`paragraph` (`test_state`,
+    `test_render`, `test_config`).
+30. `tempo` + R5 goals and status segment (`test_tempo.py`, `test_state`,
+    `test_render`).
+31. R3/R4 re-entry flow.
+32. R6 checkpoints, line editor, Ctrl+C flow; roundtrip hash check extended.
+33. README (keys, commands, settings, validation protocol), acceptance item:
+    Cyrillic recall line in Windows Terminal.
+34+. Android port of §17, planned as its own task list when started.
