@@ -8,7 +8,7 @@ from typing import Self
 
 import msgpack
 
-from kert.common.dbschema import SCHEMA_VERSION
+from kert.common.dbschema import SCHEMA_VERSION, upgrade_state_tables
 from kert.common.errors import KertError
 from kert.common.model import Block, Sentence, SplitCandidate
 
@@ -70,6 +70,7 @@ class BookStore:
                     "FROM sentences ORDER BY id"
                 )
             )
+            upgrade_state_tables(conn)
         except (sqlite3.DatabaseError, ValueError, TypeError) as exc:
             # Not SQLite, foreign tables, or undecodable msgpack blobs.
             conn.close()
@@ -111,13 +112,20 @@ class BookStore:
             )
 
     def log_advance(
-        self, ts: float, sentence_id: int, chunk_words: int, direction: int
+        self,
+        ts: float,
+        sentence_id: int,
+        chunk_words: int,
+        direction: int,
+        kind: str = "step",
+        mode: str = "chunk",
     ) -> None:
         with self._conn:
             self._conn.execute(
-                "INSERT INTO advance_log (ts, sentence_id, chunk_words, direction) "
-                "VALUES (?, ?, ?, ?)",
-                (ts, sentence_id, chunk_words, direction),
+                "INSERT INTO advance_log "
+                "(ts, sentence_id, chunk_words, direction, kind, mode) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (ts, sentence_id, chunk_words, direction, kind, mode),
             )
 
     def trim_advance_log(self, keep: int) -> None:

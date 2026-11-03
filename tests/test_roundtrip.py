@@ -104,12 +104,12 @@ def test_full_session_roundtrip(book_path, toml):
     # Words of the chunk left (§3): Глава 1=2, Он вышел из дома ,=4,
     # хотя шёл дождь .=3, На улице было пусто .=4, — Привет , —=1.
     assert advance_rows(book_path) == [
-        (100.0, 1, 2, 1),
-        (101.0, 2, 4, 1),
-        (102.0, 2, 3, 1),
-        (103.0, 3, 4, 1),
-        (104.0, 4, 1, -1),
-        (105.0, 3, 4, 1),
+        (100.0, 1, 2, 1, "step", "chunk"),
+        (101.0, 2, 4, 1, "step", "chunk"),
+        (102.0, 2, 3, 1, "step", "chunk"),
+        (103.0, 3, 4, 1, "step", "chunk"),
+        (104.0, 4, 1, -1, "step", "chunk"),
+        (105.0, 3, 4, 1, "step", "chunk"),
     ]
     assert content_digest(book_path) == before
     assert sorted(p.name for p in book_path.parent.iterdir()) == ["book.kert"]
@@ -162,7 +162,10 @@ def test_advance_log_is_capped_on_close(book_path, toml):
     assert ADVANCE_LOG_CAP == 10_000
     assert len(rows) == ADVANCE_LOG_CAP
     assert rows[0][0] == 2.0  # the two oldest rows were dropped
-    assert rows[-2:] == [(99999.0, 1, 2, 1), (99999.0, 2, 7, 1)]
+    assert rows[-2:] == [
+        (99999.0, 1, 2, 1, "step", "chunk"),
+        (99999.0, 2, 7, 1, "step", "chunk"),
+    ]
 
 
 def test_settings_feedback_is_not_logged_as_advance(book_path, toml):
