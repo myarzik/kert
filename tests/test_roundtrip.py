@@ -201,5 +201,24 @@ def test_each_move_is_logged_with_its_kind(book_path, toml):
     ]
 
 
+def test_moves_are_logged_with_the_mode_in_force(book_path, toml):
+    store, state = open_session(book_path, config_file=toml)
+    keys = ["j", ":", *"set mode=paragraph", key.ENTER, "j"]
+    state = type_keys(store, state, keys, toml, lambda: 1.0)
+    close_session(store, state)
+
+    # S1 (2 words) as a chunk, then block 2 (S2 + S3 = 11 words) as a paragraph.
+    assert [(row[2], row[5]) for row in advance_rows(book_path)] == [
+        (2, "chunk"),
+        (11, "paragraph"),
+    ]
+    store, state = open_session(book_path, config_file=toml)
+    try:
+        assert state.settings.mode == "paragraph"
+        assert load_global(toml).mode == "chunk"
+    finally:
+        store.close()
+
+
 def test_cli_read_missing_book_is_user_error(tmp_path):
     assert main(["read", str(tmp_path / "missing.kert")]) == 1

@@ -265,3 +265,42 @@ def test_validate_normalizes_valid_values(key, raw, value):
 def test_validate_rejects_invalid_values(key, raw):
     with pytest.raises(KertError):
         config.validate(key, raw)
+
+
+# --- mode: per book only (§17.2, §17.10) --------------------------------------------
+
+
+def test_mode_resolves_from_the_book():
+    assert resolve(FakeBook(mode="paragraph"), HARDCODED).mode == "paragraph"
+
+
+@pytest.mark.parametrize("state", [{}, {"mode": "plain"}])
+def test_missing_or_invalid_book_mode_is_chunk(state):
+    assert resolve(FakeBook(**state), HARDCODED).mode == "chunk"
+
+
+def test_toml_never_sets_the_mode(toml):
+    write(toml, 'mode = "paragraph"\n')
+
+    assert load_global(toml).mode == "chunk"
+
+
+def test_set_mode_writes_the_book_only(toml):
+    write(toml, 'chunk_width = 10\ntheme = "light"\n')
+    before = toml.read_text(encoding="utf-8")
+    book = FakeBook()
+
+    set_setting(book, "mode", "sentence", toml)
+
+    assert book.state == {"mode": "sentence"}
+    assert toml.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.parametrize("raw", ["chunk", "sentence", "paragraph"])
+def test_validate_accepts_modes(raw):
+    assert config.validate("mode", raw) == raw
+
+
+def test_validate_rejects_unknown_mode():
+    with pytest.raises(KertError, match="mode must be one of"):
+        config.validate("mode", "plain")

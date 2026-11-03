@@ -460,3 +460,111 @@ def test_peek_is_not_entered_from_the_command_line():
 
     assert state.peek is False
     assert state.command == "p"
+
+
+# --- Reading modes (§17.2) ------------------------------------------------------------
+
+SENTENCE = Settings(chunk_width=5, theme="dark", mode="sentence")
+PARAGRAPH = Settings(chunk_width=5, theme="dark", mode="paragraph")
+
+
+def in_mode(settings, position):
+    return initial_state(mini_book(), settings, position)
+
+
+def test_mode_defaults_to_chunk():
+    assert W5.mode == "chunk"
+
+
+def test_sentence_mode_units_are_whole_sentences():
+    # mini_book: S1 (2 words) | S2 (9) S3 (2) | S4 (9)
+    state = in_mode(SENTENCE, Position(2, 0))
+
+    assert state.index == 1
+    assert state.percent == pytest.approx(2 / 22 * 100)
+    state = press(state, "j")
+    assert state.position == Position(3, 0)
+    assert state.effects == (Advance(2, 9, 1, "step"),)
+    assert state.percent == pytest.approx(11 / 22 * 100)
+
+
+def test_paragraph_mode_units_are_whole_blocks():
+    state = in_mode(PARAGRAPH, Position(2, 0))
+
+    state = press(state, "j")
+    assert state.position == Position(4, 0)
+    assert state.effects == (Advance(2, 11, 1, "step"),)  # block 2 = S2 + S3
+    assert state.percent == pytest.approx(13 / 22 * 100)
+    assert press(state, "j").effects == ()  # last unit
+
+
+@pytest.mark.parametrize(
+    ("position", "resolved"),
+    [(Position(3, 0), Position(2, 0)), (Position(2, 7), Position(2, 0))],
+)
+def test_paragraph_mode_resolves_inside_a_block_to_its_start(position, resolved):
+    assert in_mode(PARAGRAPH, position).position == resolved
+
+
+def test_sentence_mode_resolves_mid_sentence_to_its_start():
+    assert in_mode(SENTENCE, Position(2, 5)).position == Position(2, 0)
+
+
+def test_paragraph_mode_regressions_move_by_block():
+    state = in_mode(PARAGRAPH, Position(4, 0))
+
+    assert press(state, "(").position == Position(2, 0)
+    assert press(state, "(").effects == (Advance(4, 9, -1, "sentence"),)
+    assert press(in_mode(PARAGRAPH, Position(1, 0)), ")").position == Position(2, 0)
+
+
+def test_paragraph_mode_peek_is_the_previous_block():
+    state = press(in_mode(PARAGRAPH, Position(4, 0)), "p")
+
+    assert state.peek is True
+    assert state.effects == (Advance(2, 11, 0, "peek"),)
+
+
+def test_paragraph_mode_goto_is_word_based():
+    # unit starts at 0, 2, 13 words: 50% = 11 is nearest to 13.
+    state = type_command(in_mode(PARAGRAPH, Position(1, 0)), "goto 50")
+
+    assert state.position == Position(4, 0)
+
+
+@pytest.mark.parametrize(
+    ("start", "mode", "position"),
+    [
+        (2, "sentence", Position(2, 0)),  # S2 tok 5 -> sentence S2
+        (3, "paragraph", Position(2, 0)),  # S3 -> block 2
+        (5, "paragraph", Position(4, 0)),
+    ],
+)
+def test_set_mode_reassembles_and_keeps_the_place(start, mode, position):
+    state = type_command(at(start), f"set mode={mode}")
+
+    assert state.settings.mode == mode
+    assert state.position == position
+    assert state.message == f"mode={mode}"
+    assert state.effects == (SaveSetting("mode", mode),)
+
+
+def test_set_mode_back_to_chunk_returns_to_the_chunk_of_the_unit_start():
+    state = type_command(at(2), "set mode=sentence")
+
+    assert type_command(state, "set mode=chunk").index == 1
+
+
+def test_set_unknown_mode_is_an_error():
+    state = type_command(at(2), "set mode=plain")
+
+    assert state.settings.mode == "chunk"
+    assert state.message.startswith("mode must be one of")
+
+
+def test_width_is_stored_in_other_modes_and_used_back_in_chunk_mode():
+    state = type_command(in_mode(SENTENCE, Position(2, 0)), "set width=8")
+
+    assert state.settings.chunk_width == 8
+    assert state.position == Position(2, 0)
+    assert type_command(state, "set mode=chunk").chunks.spans == at(1, W8).chunks.spans

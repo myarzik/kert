@@ -436,3 +436,33 @@ def test_leaving_peek_restores_the_frame():
     state = state_at(Position(2, 5), (44, 12))
 
     assert lines(handle_key(handle_key(state, "p"), "x")) == lines(state)
+
+
+# --- Reading modes (§17.2) ------------------------------------------------------------
+
+
+def test_sentence_mode_highlights_the_whole_sentence():
+    settings = Settings(chunk_width=5, theme="dark", mode="sentence")
+    state = state_at(Position(2, 0), (44, 12), settings)
+
+    assert style_of(state, "alpha bravo charlie delta echo") == ("grey93", True)
+    assert style_of(state, "golf hotel india.") == ("grey93", True)
+    assert style_of(state, "Short one.") == ("grey50", False)
+
+
+def test_paragraph_mode_highlights_the_whole_block():
+    settings = Settings(chunk_width=5, theme="dark", mode="paragraph")
+    state = state_at(Position(2, 0), (44, 12), settings)
+
+    assert style_of(state, "alpha bravo charlie delta echo") == ("grey93", True)
+    assert style_of(state, "Short one.") == ("grey93", True)
+    assert style_of(state, B1) == ("grey39", False)
+    assert active_rows(state) == [4, 5]
+
+
+def test_paragraph_mode_peek_shows_the_previous_block():
+    settings = Settings(chunk_width=5, theme="dark", mode="paragraph")
+    state = handle_key(state_at(Position(4, 0), (44, 12), settings), "p")
+
+    assert style_of(state, "Short one.") == ("grey93", True)
+    assert style_of(state, B3[0]) == ("grey39", False)
