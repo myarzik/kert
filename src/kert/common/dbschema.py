@@ -50,3 +50,7 @@ CREATE TABLE advance_log (
 def create_schema(conn: sqlite3.Connection) -> None:
     """Create the `.kert` schema (spec §3) on an empty database."""
     conn.executescript(DDL)
+
+
+def upgrade_state_tables(conn: sqlite3.Connection) -> None:
+    raise NotImplementedError

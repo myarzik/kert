@@ -173,7 +173,7 @@ def advance_rows(path):
     conn = sqlite3.connect(path)
     try:
         return conn.execute(
-            "SELECT ts, sentence_id, chunk_words, direction "
+            "SELECT ts, sentence_id, chunk_words, direction, kind, mode "
             "FROM advance_log ORDER BY id"
         ).fetchall()
     finally:
@@ -186,7 +186,52 @@ def test_log_advance_appends_rows_in_order(book_path):
         s.log_advance(ts=100.5, sentence_id=2, chunk_words=4, direction=1)
         s.log_advance(ts=101.0, sentence_id=3, chunk_words=4, direction=-1)
 
-    assert advance_rows(book_path) == [(100.5, 2, 4, 1), (101.0, 3, 4, -1)]
+    assert advance_rows(book_path) == [
+        (100.5, 2, 4, 1, "step", "chunk"),
+        (101.0, 3, 4, -1, "step", "chunk"),
+    ]
+
+
+@spacy
+def test_log_advance_records_kind_and_mode(book_path):
+    with BookStore.open(book_path) as s:
+        s.log_advance(
+            ts=1.0,
+            sentence_id=2,
+            chunk_words=4,
+            direction=0,
+            kind="peek",
+            mode="sentence",
+        )
+
+    assert advance_rows(book_path) == [(1.0, 2, 4, 0, "peek", "sentence")]
+
+
+@spacy
+def test_opening_a_0_2_book_migrates_its_state_tables(book_path):
+    conn = sqlite3.connect(book_path)
+    conn.executescript(
+        "DROP TABLE checkpoints; DROP TABLE advance_log;"
+        "CREATE TABLE advance_log (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "ts REAL NOT NULL, sentence_id INTEGER NOT NULL, "
+        "chunk_words INTEGER NOT NULL, direction INTEGER NOT NULL);"
+        "INSERT INTO advance_log (ts, sentence_id, chunk_words, direction) "
+        "VALUES (5.0, 1, 3, 1);"
+    )
+    conn.close()
+    before = content_digest(book_path)
+
+    with BookStore.open(book_path) as s:
+        s.log_advance(ts=6.0, sentence_id=2, chunk_words=4, direction=1, kind="block")
+
+    assert advance_rows(book_path) == [
+        (5.0, 1, 3, 1, "step", "chunk"),
+        (6.0, 2, 4, 1, "block", "chunk"),
+    ]
+    conn = sqlite3.connect(book_path)
+    assert conn.execute("SELECT count(*) FROM checkpoints").fetchone() == (0,)
+    conn.close()
+    assert content_digest(book_path) == before
 
 
 @spacy
