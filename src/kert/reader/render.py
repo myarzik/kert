@@ -1,30 +1,14 @@
 """Pure frame builder: `build_frame(state) -> renderable` (spec §7, §13.1)."""
 
-from dataclasses import dataclass
-
 from rich.console import Console, Group, RenderableType
 from rich.text import Text
 
 from kert.reader.state import ReaderState, block_range
+from kert.reader.theme import THEMES, Theme
 
 MAX_TEXT_WIDTH = 88
 MIN_COLUMNS = 40
 NARROW_NOTICE = f"Terminal too narrow: {MIN_COLUMNS}+ columns needed"
-
-
-@dataclass(frozen=True, slots=True)
-class Theme:
-    active: str
-    rest: str
-    neighbor: str
-    status: str
-
-
-# §7.2 / D12: explicit 256-color greys, never the `dim` attribute.
-THEMES = {
-    "dark": Theme("bold white", "grey50", "grey35", "grey50"),
-    "light": Theme("bold black", "grey62", "grey74", "grey62"),
-}
 
 
 def build_frame(state: ReaderState) -> RenderableType:

@@ -253,7 +253,7 @@ def test_cut_edges_have_no_marker():
     assert not any("…" in line for line in lines(tall_at(5)))
 
 
-# --- Styles (§17.5) --------------------------------------------------------------------
+# --- Styles (§17.5) -------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
