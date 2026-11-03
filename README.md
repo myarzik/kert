@@ -285,6 +285,7 @@ The process keeps that honest and reviewable:
 kert is released under the [MIT License](LICENSE). Prebuilt binaries bundle
 third-party components under their own licenses. Each release includes their
 notices (`THIRD_PARTY_NOTICES-<platform>.txt`, also inside the full archive).
+The Android app shows its notices under *Licenses* in the library.
 
 ## Manual acceptance checklist
 

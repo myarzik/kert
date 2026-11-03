@@ -99,11 +99,14 @@ jobs:
           (cd android && KERT_ANDROID_KEYSTORE="$RUNNER_TEMP/kert.jks" ./gradlew :app:assembleRelease --console=plain)
           mkdir -p dist
           cp android/app/build/outputs/apk/release/app-release.apk "dist/kert-android-${VERSION}.apk"
+          cp android/app/build/generated/assets/releaseThirdPartyNotices/third_party_notices.txt dist/THIRD_PARTY_NOTICES-android.txt
       - uses: actions/upload-artifact@v4
         if: env.KEYSTORE_BASE64 != ''
         with:
           name: kert-android
-          path: dist/kert-android-*.apk
+          path: |
+            dist/kert-android-*.apk
+            dist/THIRD_PARTY_NOTICES-android.txt
           if-no-files-found: error
 
   publish:

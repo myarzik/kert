@@ -924,6 +924,12 @@ android/                      Gradle project (Kotlin DSL, version catalog)
   when the signing secrets are present. The app's `versionName` = the
   Python package version; `versionCode` derived from it
   (`major*10000 + minor*100 + patch`).
+- Third-party notices: the build generates `third_party_notices.txt` (an
+  APK asset) from each variant's runtime classpath: every module with the
+  license its POM (or parent POM) declares, the full license texts, and
+  kert's own MIT license. A license without a text in `android/app/licenses/`
+  fails the build. The library screen shows it under "Licenses"; the release
+  also attaches it as `THIRD_PARTY_NOTICES-android.txt`.
 
 ### 16.8 Task order
 

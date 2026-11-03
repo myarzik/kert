@@ -65,6 +65,7 @@ fun KertApp(
         var duplicate by remember { mutableStateOf<StagedBook?>(null) }
         var deleting by remember { mutableStateOf<LibraryEntry?>(null) }
         var reading by remember { mutableStateOf<LibraryEntry?>(null) }
+        var licenses by remember { mutableStateOf(false) }
 
         suspend fun refresh() {
             books = withContext(Dispatchers.IO) { library.list() }
@@ -105,7 +106,9 @@ fun KertApp(
         }
 
         val open = reading
-        if (open != null) {
+        if (licenses) {
+            LicensesScreen(onBack = { licenses = false })
+        } else if (open != null) {
             ReaderScreen(open, defaults, dark, host, onBack = {
                 reading = null
                 scope.launch { refresh() }
@@ -117,6 +120,7 @@ fun KertApp(
                 onAdd = { picker.launch(arrayOf("*/*")) },
                 onOpen = { reading = it },
                 onDelete = { deleting = it },
+                onLicenses = { licenses = true },
             )
         }
 
@@ -170,9 +174,15 @@ private fun LibraryScreen(
     onAdd: () -> Unit,
     onOpen: (LibraryEntry) -> Unit,
     onDelete: (LibraryEntry) -> Unit,
+    onLicenses: () -> Unit,
 ) {
     Scaffold(
-        topBar = { TopAppBar(title = { Text("kert") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("kert") },
+                actions = { TextButton(onClick = onLicenses) { Text("Licenses") } },
+            )
+        },
         floatingActionButton = { FloatingActionButton(onClick = onAdd) { Text("+") } },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
