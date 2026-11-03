@@ -171,9 +171,8 @@ def test_advance_log_is_capped_on_close(book_path, toml):
 def test_settings_feedback_is_not_logged_as_advance(book_path, toml):
     store, state = open_session(book_path, config_file=toml)
     state = type_keys(
-        store, state, [":", *"set theme=light", key.ENTER, "G", "g", "g"], toml,
-        lambda: 1.0,
-    )  # fmt: skip
+        store, state, [":", *"set theme=light", key.ENTER], toml, lambda: 1.0
+    )
     close_session(store, state)
 
     assert advance_rows(book_path) == []
@@ -182,6 +181,24 @@ def test_settings_feedback_is_not_logged_as_advance(book_path, toml):
         assert state.settings.theme == "light"
     finally:
         store.close()
+
+
+def test_each_move_is_logged_with_its_kind(book_path, toml):
+    # §17.4 at W=8 each sentence is one chunk; blocks: S1 | S2 S3 | S4 | S5 S6.
+    store, state = open_session(book_path, config_file=toml)
+    keys = ["J", "j", "(", ")", "p", "x", "G", "g", "g"]
+    state = type_keys(store, state, keys, toml, lambda: 1.0)
+    close_session(store, state)
+
+    assert [(row[3], row[4], row[5]) for row in advance_rows(book_path)] == [
+        (1, "block", "chunk"),
+        (1, "step", "chunk"),
+        (-1, "sentence", "chunk"),
+        (1, "sentence", "chunk"),
+        (0, "peek", "chunk"),
+        (1, "jump", "chunk"),
+        (-1, "jump", "chunk"),
+    ]
 
 
 def test_cli_read_missing_book_is_user_error(tmp_path):

@@ -32,7 +32,8 @@ class Book:
 class Advance:
     sentence_id: int
     chunk_words: int  # words of the chunk just left
-    direction: int  # +1 forward, -1 backward
+    direction: int  # +1 forward, -1 backward, 0 peek
+    kind: str = "step"  # §17.4
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +115,7 @@ class ReaderState:
     size: tuple[int, int] = (80, 24)  # terminal (columns, rows)
     command: str | None = None  # `:` line contents; None outside command mode
     pending_g: bool = False
+    peek: bool = False  # §17.3, transient
     message: str | None = None
     effects: tuple[Effect, ...] = ()
     quit: bool = False

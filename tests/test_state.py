@@ -150,7 +150,16 @@ def test_effects_are_per_key():
     assert press(at(1), "j", "x").effects == ()
 
 
-# --- Block and book jumps (no advance_log, SPEC_NOTES Task 8a) ------------------------
+# --- Block and book jumps (logged per §17.4) -----------------------------------------
+
+# mini_book at W=5: (sentence_id, words) of each chunk, see helpers.mini_book.
+CHUNKS = [(1, 2), (2, 5), (2, 4), (3, 2), (4, 5), (4, 4)]
+
+
+def left(index, direction, kind):
+    """The advance_log effect for leaving chunk `index`."""
+    sentence_id, words = CHUNKS[index]
+    return Advance(sentence_id, words, direction, kind)
 
 
 @pytest.mark.parametrize(("start", "index"), [(1, 4), (2, 4), (3, 4), (0, 1)])
@@ -158,11 +167,14 @@ def test_next_block_goes_to_its_first_chunk(start, index):
     state = press(at(start), "J")
 
     assert state.index == index
-    assert state.effects == ()
+    assert state.effects == (left(start, 1, "block"),)
 
 
 def test_next_block_in_last_block_is_a_no_op():
-    assert press(at(4), "J").index == 4
+    state = press(at(4), "J")
+
+    assert state.index == 4
+    assert state.effects == ()
 
 
 @pytest.mark.parametrize(("start", "index"), [(5, 1), (4, 1), (2, 0), (3, 0)])
@@ -170,18 +182,26 @@ def test_previous_block_goes_to_its_first_chunk(start, index):
     state = press(at(start), "K")
 
     assert state.index == index
-    assert state.effects == ()
+    assert state.effects == (left(start, -1, "block"),)
 
 
 def test_previous_block_in_first_block_is_a_no_op():
-    assert press(at(0), "K").index == 0
+    state = press(at(0), "K")
+
+    assert state.index == 0
+    assert state.effects == ()
 
 
 def test_gg_goes_to_first_chunk():
     state = press(at(5), "g", "g")
 
     assert state.index == 0
-    assert state.effects == ()
+    assert state.effects == (left(5, -1, "jump"),)
+
+
+def test_jump_to_the_active_chunk_is_not_logged():
+    assert press(at(0), "g", "g").effects == ()
+    assert press(at(5), "G").effects == ()
 
 
 def test_single_g_waits_for_second_key():
@@ -196,7 +216,7 @@ def test_capital_g_goes_to_last_chunk():
     state = press(at(0), "G")
 
     assert state.index == 5
-    assert state.effects == ()
+    assert state.effects == (left(0, 1, "jump"),)
 
 
 def test_unknown_key_is_a_no_op():
@@ -332,7 +352,7 @@ def test_goto_jumps_to_chunk_nearest_in_words(percent, index):
     state = type_command(at(2), f"goto {percent}")
 
     assert state.index == index
-    assert state.effects == ()
+    assert state.effects == (left(2, 1 if index > 2 else -1, "jump"),)
 
 
 def test_colon_q_quits():
@@ -364,3 +384,79 @@ def test_heading_and_code_are_one_stop_each_at_any_width():
     ]
     assert press(state, "j").index == 1
     assert press(state, "J").index == 1
+
+
+# --- R1 cheap regressions (§17.3) -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("start", "index"),
+    [
+        (2, 1),  # mid-sentence: back to the unit starting the sentence
+        (1, 0),  # at a sentence start: the previous sentence's start
+        (3, 1),
+        (4, 3),  # crosses the block boundary
+    ],
+)
+def test_open_paren_goes_back_by_sentence(start, index):
+    state = press(at(start), "(")
+
+    assert state.index == index
+    assert state.effects == (left(start, -1, "sentence"),)
+
+
+def test_open_paren_at_book_start_is_a_no_op():
+    state = press(at(0), "(")
+
+    assert state.index == 0
+    assert state.effects == ()
+
+
+@pytest.mark.parametrize(("start", "index"), [(0, 1), (1, 3), (2, 3), (3, 4)])
+def test_close_paren_goes_to_the_next_sentence(start, index):
+    state = press(at(start), ")")
+
+    assert state.index == index
+    assert state.effects == (left(start, 1, "sentence"),)
+
+
+@pytest.mark.parametrize("start", [4, 5])
+def test_close_paren_in_the_last_sentence_is_a_no_op(start):
+    state = press(at(start), ")")
+
+    assert state.index == start
+    assert state.effects == ()
+
+
+def test_peek_shows_the_previous_unit_without_moving():
+    state = press(at(2), "p")
+
+    assert state.peek is True
+    assert state.index == 2
+    assert state.position == at(2).position
+    assert state.effects == (Advance(2, 5, 0, "peek"),)
+
+
+@pytest.mark.parametrize("k", ["j", "b", "J", ":", "q", "p", "x"])
+def test_any_key_leaves_peek_and_is_consumed(k):
+    state = press(at(2), "p", k)
+
+    assert state.peek is False
+    assert state.index == 2
+    assert state.command is None
+    assert state.quit is False
+    assert state.effects == ()
+
+
+def test_peek_at_the_first_unit_is_a_no_op():
+    state = press(at(0), "p")
+
+    assert state.peek is False
+    assert state.effects == ()
+
+
+def test_peek_is_not_entered_from_the_command_line():
+    state = press(at(2), ":", "p")
+
+    assert state.peek is False
+    assert state.command == "p"

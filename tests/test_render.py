@@ -420,3 +420,19 @@ def test_long_code_line_wraps_within_text_width():
 
     assert all(len(line) <= 42 for line in frame[:-1])
     assert sum(1 for line in frame[:-1] if line) == 2
+
+
+# --- Peek (§17.3) ---------------------------------------------------------------------
+
+
+def test_peek_renders_the_previous_unit_active_and_the_real_one_as_rest():
+    state = handle_key(state_at(Position(2, 5), (44, 12)), "p")
+
+    assert style_of(state, "alpha bravo charlie delta echo") == ("grey93", True)
+    assert style_of(state, "golf hotel india.") == ("grey50", False)
+
+
+def test_leaving_peek_restores_the_frame():
+    state = state_at(Position(2, 5), (44, 12))
+
+    assert lines(handle_key(handle_key(state, "p"), "x")) == lines(state)
