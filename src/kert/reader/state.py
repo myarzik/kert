@@ -149,12 +149,14 @@ def initial_state(
 
 def handle_key(state: ReaderState, key: str) -> ReaderState:
     state = replace(state, message=None, effects=())
+    if state.peek:
+        return replace(state, peek=False)  # §17.3: the key that ends peek is consumed
     if state.command is not None:
         return _command_key(state, key)
     if state.pending_g:
         state = replace(state, pending_g=False)
         if key == "g":
-            return replace(state, index=0)
+            return _move(state, 0, "jump")
     if key in _NEXT:
         return _step(state, 1)
     if key in _PREVIOUS:
@@ -163,10 +165,16 @@ def handle_key(state: ReaderState, key: str) -> ReaderState:
         return _next_block(state)
     if key == "K":
         return _previous_block(state)
+    if key == "(":
+        return _previous_sentence(state)
+    if key == ")":
+        return _next_sentence(state)
+    if key == "p":
+        return _peek(state)
     if key == "g":
         return replace(state, pending_g=True)
     if key == "G":
-        return replace(state, index=len(state.chunks.spans) - 1)
+        return _move(state, len(state.chunks.spans) - 1, "jump")
     if key == ":":
         return replace(state, command="")
     if key == "q":
@@ -174,30 +182,74 @@ def handle_key(state: ReaderState, key: str) -> ReaderState:
     return state
 
 
-def _step(state: ReaderState, direction: int) -> ReaderState:
-    target = state.index + direction
-    if not 0 <= target < len(state.chunks.spans):
+def _move(state: ReaderState, target: int, kind: str) -> ReaderState:
+    """Go to chunk `target`, logging the chunk left (§17.4); same chunk: no-op."""
+    if target == state.index:
         return state
     left = Advance(
         sentence_id=state.active.sentence_id,
         chunk_words=state.chunks.words[state.index],
-        direction=direction,
+        direction=1 if target > state.index else -1,
+        kind=kind,
     )
     return replace(state, index=target, effects=(left,))
+
+
+def _step(state: ReaderState, direction: int) -> ReaderState:
+    target = state.index + direction
+    if not 0 <= target < len(state.chunks.spans):
+        return state
+    return _move(state, target, "step")
 
 
 def _next_block(state: ReaderState) -> ReaderState:
     _, end = block_range(state.chunks, state.index)
     if end == len(state.chunks.spans):
         return state
-    return replace(state, index=end)
+    return _move(state, end, "block")
 
 
 def _previous_block(state: ReaderState) -> ReaderState:
     start, _ = block_range(state.chunks, state.index)
     if start == 0:
         return state
-    return replace(state, index=block_range(state.chunks, start - 1)[0])
+    return _move(state, block_range(state.chunks, start - 1)[0], "block")
+
+
+def _sentence_start(chunks: Chunks, index: int) -> int:
+    pos = chunks.sentence_pos
+    while index > 0 and pos[index - 1] == pos[index]:
+        index -= 1
+    return index
+
+
+def _previous_sentence(state: ReaderState) -> ReaderState:
+    start = _sentence_start(state.chunks, state.index)
+    if start == state.index and start > 0:
+        start = _sentence_start(state.chunks, start - 1)
+    return _move(state, start, "sentence")
+
+
+def _next_sentence(state: ReaderState) -> ReaderState:
+    pos, target = state.chunks.sentence_pos, state.index
+    while target < len(pos) and pos[target] == pos[state.index]:
+        target += 1
+    if target == len(pos):
+        return state
+    return _move(state, target, "sentence")
+
+
+def _peek(state: ReaderState) -> ReaderState:
+    if state.index == 0:
+        return state
+    shown = state.index - 1
+    peeked = Advance(
+        sentence_id=state.chunks.spans[shown].sentence_id,
+        chunk_words=state.chunks.words[shown],
+        direction=0,
+        kind="peek",
+    )
+    return replace(state, peek=True, effects=(peeked,))
 
 
 def _command_key(state: ReaderState, key: str) -> ReaderState:
@@ -234,7 +286,7 @@ def _goto(state: ReaderState, percent: float) -> ReaderState:
     before = state.chunks.words_before
     # min() keeps the first of equally near chunks: ties go to the earlier one.
     index = min(range(len(before)), key=lambda i: abs(before[i] - target))
-    return replace(state, index=index)
+    return _move(state, index, "jump")
 
 
 def _set(state: ReaderState, key: str, value: str) -> ReaderState:

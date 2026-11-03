@@ -44,3 +44,4 @@ Deviations and resolutions against `kert_spec.md`. One line per entry.
 - §17.5: the contrast oracle reads RGB from Rich's 256-color palette instead of a hand-kept hex table; the `…` row is dropped (center focus has no markers).
 - §17.8: the proposal's `r` span replay after a goal checkpoint is deferred; the quit checkpoint threshold (500 words) is a constant, not a setting.
 - Task 27, test_roundtrip, §17.4: the RED commit widened the shared `test_store.advance_rows` helper to return `kind`/`mode`; the roundtrip expectations were completed with `"step", "chunk"` (asserted behavior unchanged).
+- Task 28, test_render peek, §17.3: when the peeked chunk is in the previous block, the frame centers on it and the real active chunk shows as a neighbor block (rest style applies only inside the shown block).

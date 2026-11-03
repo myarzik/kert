@@ -1,5 +1,7 @@
 """Pure frame builder: `build_frame(state) -> renderable` (spec §7, §13.1)."""
 
+from dataclasses import replace
+
 from rich.console import Console, Group, RenderableType
 from rich.text import Text
 
@@ -23,11 +25,14 @@ def build_frame(state: ReaderState) -> RenderableType:
 
     # Center focus (§7.1): the chunk's first line sits on row (H - h) // 2 and
     # the text runs above and below it as one tape, cut at the screen edges.
-    lines, first, last = _active_block(state, width, theme)
+    # Peek (§17.3) frames the previous chunk as if it were active; the real
+    # one is then plain rest-of-block text. The status line stays real.
+    view = replace(state, index=state.index - 1) if state.peek else state
+    lines, first, last = _active_block(view, width, theme)
     top = max(0, (height - (last - first + 1)) // 2)
     content = [
-        *_tape_above(state, lines[:first], top, width, theme),
-        *_tape_below(state, lines[first:], height - top, width, theme),
+        *_tape_above(view, lines[:first], top, width, theme),
+        *_tape_below(view, lines[first:], height - top, width, theme),
     ]
     content += [Text()] * (height - len(content))
     content.append(_status(state, width, theme))
