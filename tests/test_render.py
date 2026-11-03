@@ -58,7 +58,7 @@ def status(percent, left="", margin=2, width=40):
 # Reading area H = rows - 1; the active chunk's first line sits on row (H - h) // 2.
 
 
-ACTIVE_COLORS = {"white", "black"}  # §7.2 active chunk; headings are bold too
+ACTIVE_COLORS = {"grey93", "grey3"}  # §17.5 active unit; headings are bold too
 
 
 def active_rows(state):
@@ -245,7 +245,7 @@ def test_tall_block_end_shows_the_next_block():
 def test_active_chunk_always_visible_in_tall_block(sentence_id):
     state = tall_at(sentence_id)
 
-    assert style_of(state, TALL[sentence_id - 1]) == ("white", True)
+    assert style_of(state, TALL[sentence_id - 1]) == ("grey93", True)
     assert active_rows(state) == [2]
 
 
@@ -253,14 +253,14 @@ def test_cut_edges_have_no_marker():
     assert not any("…" in line for line in lines(tall_at(5)))
 
 
-# --- Styles (§7.2) --------------------------------------------------------------------
+# --- Styles (§17.5) --------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("settings", "active", "rest", "neighbor", "status_color"),
     [
-        (DARK, "white", "grey50", "grey35", "grey50"),
-        (LIGHT, "black", "grey62", "grey74", "grey62"),
+        (DARK, "grey93", "grey50", "grey39", "grey50"),
+        (LIGHT, "grey3", "grey46", "grey54", "grey46"),
     ],
 )
 def test_theme_presets(settings, active, rest, neighbor, status_color):
@@ -277,8 +277,8 @@ def test_theme_presets(settings, active, rest, neighbor, status_color):
 def test_active_chunk_spanning_a_line_break_is_styled_on_both_lines():
     state = state_at(Position(2, 0), (44, 12), Settings(chunk_width=8, theme="dark"))
 
-    assert style_of(state, B2[0]) == ("white", True)
-    assert style_of(state, "golf hotel india.") == ("white", True)
+    assert style_of(state, B2[0]) == ("grey93", True)
+    assert style_of(state, "golf hotel india.") == ("grey93", True)
     assert style_of(state, "Short one.") == ("grey50", False)
 
 
@@ -341,7 +341,7 @@ def test_40_columns_renders_the_book():
 
 @pytest.mark.parametrize("settings", [DARK, LIGHT])
 def test_narrow_notice_uses_status_style(settings):
-    color = "grey50" if settings is DARK else "grey62"
+    color = "grey50" if settings is DARK else "grey46"
     state = state_at(Position(2, 0), (39, 12), settings)
 
     assert style_of(state, "Terminal too narrow") == (color, False)
@@ -380,7 +380,7 @@ def typed_at(sentence_id, settings=DARK):
 
 @pytest.mark.parametrize(
     ("settings", "active", "neighbor"),
-    [(DARK, "white", "grey35"), (LIGHT, "black", "grey74")],
+    [(DARK, "grey93", "grey39"), (LIGHT, "grey3", "grey54")],
 )
 def test_heading_is_bold_active_or_not(settings, active, neighbor):
     assert style_of(typed_at(1, settings), "Глава один") == (active, True)
@@ -395,7 +395,7 @@ def test_code_keeps_line_breaks_and_indentation():
 
 
 @pytest.mark.parametrize(
-    ("sentence_id", "style"), [(3, ("white", True)), (2, ("grey35", False))]
+    ("sentence_id", "style"), [(3, ("grey93", True)), (2, ("grey39", False))]
 )
 def test_code_styles_active_and_neighbor(sentence_id, style):
     assert style_of(typed_at(sentence_id), "return 1") == style
