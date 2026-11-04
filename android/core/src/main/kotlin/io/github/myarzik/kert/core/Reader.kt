@@ -1,5 +1,7 @@
 package io.github.myarzik.kert.core
 
+import kotlin.math.ceil
+
 data class Position(val sentenceId: Long, val chunkStartToken: Int)
 
 enum class Theme(val storage: String) { DARK("dark"), LIGHT("light") }
@@ -146,7 +148,30 @@ object Reader {
     const val WIDTH_MAX = 12
     const val GOAL_REACHED = "goal reached"
 
-    fun goalSegment(state: ReaderState): String? = TODO()
+    const val LOG_KEEP = 1000 // recent advance_log rows held for tempo (§17.6)
+
+    /** `▸ 640 w · ~4 min` / `▸ 6 min · ~1100 w` for the status line (§17.6), null without a goal. */
+    fun goalSegment(state: ReaderState): String? {
+        val goal = state.goal ?: return null
+        val wps = Tempo.wps(state.log, state.settings.mode.storage)
+        return if (goal.unit == GoalUnit.WORDS) {
+            val words = wordsLeft(state, goal)
+            "▸ $words w" + if (wps != null) " · ~${maxOf(1, ceil(words / wps / 60).toInt())} min" else ""
+        } else {
+            val seconds = secondsLeft(state, goal)
+            // Python round(x, -1): to the nearest 10, ties to even.
+            val words = Math.rint(seconds * wps.orZero() / 10) * 10
+            "▸ ${ceil(seconds / 60).toInt()} min" + if (wps != null) " · ~${words.toLong()} w" else ""
+        }
+    }
+
+    private fun Double?.orZero() = this ?: 0.0
+
+    private fun wordsLeft(state: ReaderState, goal: Goal): Int =
+        maxOf(0, goal.amount - (state.chunks.wordsBefore[state.index] - goal.startWords))
+
+    private fun secondsLeft(state: ReaderState, goal: Goal): Double =
+        maxOf(0.0, goal.amount * 60 - Tempo.activeSeconds(state.log, state.settings.mode.storage, goal.armedAt))
 
     fun initial(book: BookContent, settings: Settings, position: Position): ReaderState {
         val chunks = Chunks.build(book, settings.chunkWidth, settings.mode)
@@ -155,7 +180,27 @@ object Reader {
     }
 
     fun reduce(state: ReaderState, action: Action): ReaderState {
-        val s = state.copy(effects = emptyList())
+        val next = dispatch(state.copy(effects = emptyList(), message = null), action)
+        val rows = next.effects.filterIsInstance<Effect.Advance>()
+            .map { LogRow(next.now, it.chunkWords, it.direction, it.kind, next.settings.mode.storage) }
+        val logged = if (rows.isEmpty()) next else next.copy(log = (next.log + rows).takeLast(LOG_KEEP))
+        return checkGoal(logged)
+    }
+
+    private fun checkGoal(s: ReaderState): ReaderState {
+        val goal = s.goal ?: return s
+        val left = if (goal.unit == GoalUnit.WORDS) wordsLeft(s, goal).toDouble() else secondsLeft(s, goal)
+        // No automatic re-arming: the reward resets motivation (§17.6).
+        return if (left > 0) s else s.copy(goal = null, message = GOAL_REACHED)
+    }
+
+    private fun arm(s: ReaderState, amount: Int, unit: GoalUnit): ReaderState = s.copy(
+        goal = Goal(amount, unit, s.now, s.chunks.wordsBefore[s.index]),
+        lastGoal = amount to unit,
+        message = "goal $amount${unit.storage}",
+    )
+
+    private fun dispatch(s: ReaderState, action: Action): ReaderState {
         // §17.3: the action that ends peek is consumed.
         if (s.peek) return s.copy(peek = false)
         val last = s.chunks.spans.size - 1
@@ -180,7 +225,10 @@ object Reader {
             Action.NextSentence -> nextSentence(s)
             Action.PeekStart -> peek(s)
             Action.PeekEnd -> s
-            is Action.SetGoal, Action.GoalOff, Action.GoalAgain -> TODO()
+            is Action.SetGoal -> if (action.amount in 1..action.unit.max) arm(s, action.amount, action.unit) else s
+            Action.GoalOff -> s.copy(goal = null, message = "goal off")
+            Action.GoalAgain -> s.lastGoal?.let { (amount, unit) -> arm(s, amount, unit) }
+                ?: s.copy(message = "no goal to re-arm")
             is Action.SetMode -> reassemble(
                 s, s.settings.copy(mode = action.mode), Effect.SaveSetting("mode", action.mode.storage),
             )
