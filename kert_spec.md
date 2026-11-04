@@ -1236,7 +1236,8 @@ rule: Python is the reference); the app maps the terminal keys to touch.
 | recall / rating / recap / recall line overlays | full-screen cards: "Tap to continue", buttons Recalled / Partial / Blank / Skip, a one-line text field with Submit / Skip |
 
 - Colors (§17.5): the presets' xterm-256 RGB on the app's backgrounds
-  (`#0E0E0E`, `#FAFAFA`); `core` checks the contrast floor against those.
+  (`#0E0E0E`, `#FFFFFF`; light was `#FAFAFA`, where grey46 falls to 4.35); `core`
+  checks the contrast floor against those.
 - Settings: per-book `reader_state` > SharedPreferences > hardcoded, as
   §16.5; `mode` is per book only (§17.2). No `default_goal` on Android.
 - `advance_log` rows carry `kind` and `mode`; `checkpoints` rows as §17.4.
