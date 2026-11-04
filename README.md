@@ -125,14 +125,17 @@ checkout).
 
 | Key | Action |
 |---|---|
-| `Space`, `j`, `→` | next fragment |
-| `b`, `k`, `←` | previous fragment |
-| `J` | first fragment of the next paragraph |
-| `K` | first fragment of the previous paragraph |
-| `g` `g` | first fragment of the book |
-| `G` | last fragment of the book |
+| `Space`, `j`, `→` | next unit (a fragment, sentence or paragraph, see *Reading modes*) |
+| `b`, `k`, `←` | previous unit |
+| `(` | back to the start of the sentence, or to the previous sentence if you are at its start |
+| `)` | start of the next sentence |
+| `p` | peek at the previous unit without moving; the next key returns (and does nothing else) |
+| `J` | first unit of the next paragraph |
+| `K` | first unit of the previous paragraph |
+| `g` `g` | first unit of the book |
+| `G` | last unit of the book |
 | `:` | open the command line |
-| `q`, `Ctrl+C` | quit (position is saved) |
+| `q`, `Ctrl+C` | quit (position is saved); after 500+ words in a session, a recall checkpoint is offered first |
 
 ### Commands
 
@@ -140,12 +143,43 @@ checkout).
 |---|---|
 | `:set width=N` | fragment width, N from 5 to 12 (default 8); re-chunks instantly |
 | `:set theme=dark` / `:set theme=light` | color preset for dark or light terminal backgrounds |
+| `:set mode=chunk` / `sentence` / `paragraph` | reading mode (default `chunk`), see below |
+| `:goal Nm` / `:goal Nw` | session goal: N minutes of active reading (1–600) or N words from here (1–100000) |
+| `:goal off` / `:goal again` | clear the goal / re-arm the last one from here |
+| `:set recap=on\|off`, `:set recap_words=N` | recap on reopening, N words (10–120, default 40) |
+| `:set recall=on\|off`, `:set recall_gap_minutes=N` | recall prompts; the reopening prompt appears after a gap of N minutes (5–1440, default 60) |
 | `:goto P` | jump to P percent of the book (0–100, by words) |
 | `:q` | quit |
 
 On the command line, `Enter` runs the command, `Esc` cancels it and
 `Backspace` on an empty line closes it. The status line shows progress as a
 word-based percentage, which stays the same when you change the width.
+
+### Reading modes
+
+`:set mode=…` chooses what is highlighted and what one step moves over:
+
+- `chunk` (default): short fragments of about `width` words.
+- `sentence`: whole sentences.
+- `paragraph`: whole paragraphs, highlighted as one block.
+
+The mode is remembered per book only, never in the global config: it doubles
+as the control condition for the validation protocol below.
+
+### Goals, recap and recall
+
+- **Goal.** `:goal 15m` or `:goal 2000w` adds a segment to the status line,
+  for example `▸ 640 w · ~4 min`. The estimate appears once kert has seen
+  about 30 of your page turns. Idle pauses over a minute do not count as
+  reading time. When you reach the goal, kert says so and does not re-arm it;
+  `:goal again` starts a new one.
+- **Recap.** Reopening a book mid-way first shows the last ~40 words before
+  your place; any key starts reading.
+- **Recall.** After a break of an hour or more, kert first asks you to recall
+  what was happening (in your head), then to rate it: `y` recalled, `p`
+  partial, `n` blank. When a goal is reached, or when you quit after 500+
+  words, it offers a one-line written recall and the same rating; `Esc` skips.
+  The answers are stored in the book's `checkpoints` table.
 
 ### Where state lives
 
@@ -160,13 +194,18 @@ word-based percentage, which stays the same when you change the width.
   ```toml
   chunk_width = 8
   theme = "dark"
+  recap = "on"
+  recap_words = 40
+  recall = "on"
+  recall_gap_minutes = 60
+  default_goal = "15m"   # optional: arm this goal in every session
   ```
 
   Precedence: the book's own last-used value, then this file, then the
-  built-in defaults (width 8, theme dark). `:set` writes to both the book and
-  this file, so a preference you set once also applies to books you open
-  later. A missing or broken file is ignored, and `:set` rewrites it with just
-  these two keys. The file never stores positions.
+  built-in defaults. `:set` writes to both the book and this file, so a
+  preference you set once also applies to books you open later (`mode` is the
+  exception: book only). A missing or broken file is ignored, and `:set`
+  rewrites it with the known keys. The file never stores positions.
 
 > **Do not copy a `.kert` file while a `kert read` session on it is open.**
 > The Reader uses SQLite WAL mode; until you quit, recent changes may live in
@@ -178,10 +217,23 @@ word-based percentage, which stays the same when you change the width.
 - Supported: Windows Terminal, macOS Terminal.app, iTerm2, and any VT-capable
   Linux terminal emulator. The legacy Windows console host (`conhost.exe`) is
   unsupported and untested; use Windows Terminal.
-- kert uses 256-color greys rather than the ANSI dim attribute, so contrast
-  does not depend on how your terminal draws "dim".
+- kert uses greys from the fixed 256-color palette, never the ANSI dim
+  attribute or the remappable ANSI white/black, so contrast does not depend on
+  your terminal's color scheme. The presets meet a WCAG contrast floor (spec
+  §17.5).
 - At least 40 columns are needed; a narrower window shows a notice until you
   resize it. Resizing takes effect on the next key press.
+
+## Validation protocol
+
+kert records what the spec's validation gate (§17.9) needs to answer "does
+chunked reading help?". Alternate `:set mode=chunk` and `:set mode=paragraph`
+by session on one technical and one fiction book, at least 6 sessions per mode
+per book, each with `:goal 15m` and recall on. Compare per mode: the recall
+self-ratings (`checkpoints.self_rating`), the reading tempo, the share of
+sessions that reach the goal, and regressions (`(`, `)`, `p` in
+`advance_log`). With one reader and self-ratings this is a go/no-go signal,
+not evidence.
 
 ## Development
 
@@ -312,3 +364,8 @@ emulator**, with both `:set theme=dark` and `:set theme=light`:
 - [x] Quit with `q`, reopen: the same fragment is active. Repeat with
       `Ctrl+C`.
 - [x] After quitting, only `book.kert` remains (no `-wal`/`-shm` files).
+- [ ] `(`, `)` and `p` behave as documented; `:set mode=sentence` and
+      `:set mode=paragraph` highlight and step by sentence and paragraph.
+- [ ] `:goal 1m` shows the goal segment and reports the goal; the recall line
+      accepts typing, both Backspace codes and paste.
+- [ ] Typing a Cyrillic recall line works in Windows Terminal.
