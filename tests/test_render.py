@@ -593,6 +593,7 @@ def test_recall_line_frame_shows_the_prompt_and_the_typed_text():
     frame = lines(state)
     prompt = "recall (one line, Enter to submit, Esc to skip):"
     assert frame[:-1] == [""] * 5 + ["  " + prompt] + [""] * 5
+    assert frame[-1] == status("9.1%", left="> дождь", width=56)
 
 
 def test_goal_reached_message_stays_visible_above_the_recall_prompt():
@@ -603,4 +604,3 @@ def test_goal_reached_message_stays_visible_above_the_recall_prompt():
     frame = lines(state)
     assert frame[4] == "  goal reached — :goal again"
     assert frame[5] == "  recall (one line, Enter to submit, Esc to skip):"
-    assert frame[-1] == status("9.1%", left="> дождь", width=56)
