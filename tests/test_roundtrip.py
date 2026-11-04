@@ -261,5 +261,18 @@ def test_reopening_after_a_long_gap_records_the_recall_rating(book_path, toml):
     assert checkpoint_rows(book_path) == [(later, "open", "chunk", 4, 4, 0, None, 1)]
 
 
+def test_goal_checkpoint_is_written_and_content_stays_untouched(book_path, toml):
+    before = content_digest(book_path)
+    store, state = open_session(book_path, config_file=toml, now=lambda: 5.0)
+    keys = [":", *"goal 2w", key.ENTER, "j", *"дождь", key.ENTER, "y", "q"]
+    state = type_keys(store, state, keys, toml, lambda: 5.0)
+    assert state.quit
+    close_session(store, state)
+
+    # Goal of 2 words: reached on leaving "Глава 1" (S1) for S2.
+    assert checkpoint_rows(book_path) == [(5.0, "goal", "chunk", 1, 2, 2, "дождь", 2)]
+    assert content_digest(book_path) == before
+
+
 def test_cli_read_missing_book_is_user_error(tmp_path):
     assert main(["read", str(tmp_path / "missing.kert")]) == 1

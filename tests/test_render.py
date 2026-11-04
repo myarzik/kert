@@ -580,3 +580,17 @@ def test_dismissing_the_recap_shows_the_reading_frame():
     state = reopened_at(Position(4, 0), 60.0)
 
     assert lines(handle_key(state, "x")) == lines(state_at(Position(4, 0), (44, 12)))
+
+
+# --- R6 recall line (§17.8) -----------------------------------------------------------
+
+
+def test_recall_line_frame_shows_the_prompt_and_the_typed_text():
+    state = state_at(Position(1, 0), (60, 12))
+    for k in [":", *"goal 2w", key.ENTER, "j", *"дождь"]:
+        state = handle_key(state, k)
+
+    frame = lines(state)
+    prompt = "recall (one line, Enter to submit, Esc to skip):"
+    assert frame[:-1] == [""] * 5 + ["  " + prompt] + [""] * 5
+    assert frame[-1] == status("9.1%", left="> дождь", width=56)

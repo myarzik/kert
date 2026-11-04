@@ -778,3 +778,164 @@ def test_recap_takes_whole_units_back_to_the_word_budget(index, words, start):
 
 def test_no_recap_at_the_book_start():
     assert recap_start(reopened(0, 0.0)) is None
+
+
+# --- R6 checkpoint recall: quit and goal triggers (§17.8) ---------------------------
+
+W12 = Settings(chunk_width=12, theme="dark")
+LINE = "line"  # overlay: one-line recall input
+RATING = "rating"
+
+
+def long_book(sentences=60):
+    """One block per 5 sentences of 10 words each: 600 words, one chunk per
+    sentence at W=12 (11 tokens <= W + 2)."""
+    words = " ".join(f"w{i}" for i in range(10))
+    return Book(
+        blocks=tuple(Block(b, "paragraph") for b in range(1, sentences // 5 + 1)),
+        sentences=tuple(
+            make_sentence(i, (i - 1) // 5 + 1, (i - 1) % 5, words + ".")
+            for i in range(1, sentences + 1)
+        ),
+        word_count=sentences * 10,
+    )
+
+
+def long_at(sentence_id, settings=W12):
+    """long_book state on sentence `sentence_id`, reached by reading forward."""
+    state = initial_state(long_book(), settings, Position(1, 0))
+    return press(state, *([")"] * (sentence_id - 1)))
+
+
+def quit_checkpoint(text, rating, end=51, words=500):
+    return Checkpoint("quit", "chunk", 1, end, words, text, rating)
+
+
+def test_quit_before_500_words_quits_at_once():
+    state = press(long_at(50), "q")  # 490 words read
+
+    assert state.quit is True
+    assert state.overlay is None
+
+
+def test_quit_after_500_words_offers_the_recall_line():
+    state = press(long_at(51), "q")  # 500 words read
+
+    assert state.quit is False
+    assert state.overlay == LINE
+
+
+def test_quit_checkpoint_line_then_rating_then_exit():
+    state = press(long_at(51), "q", *"он ушёл", key.ENTER)
+    assert state.overlay == RATING
+    assert state.effects == ()
+
+    state = press(state, "y")
+    assert state.effects == (quit_checkpoint("он ушёл", 2),)
+    assert state.quit is True
+
+
+def test_colon_q_offers_the_checkpoint_too():
+    assert type_command(long_at(51), "q").overlay == LINE
+
+
+def test_esc_at_the_line_skips_the_checkpoint_and_exits():
+    state = press(long_at(51), "q", "a", key.ESC)
+
+    assert state.quit is True
+    assert state.effects == ()
+
+
+def test_esc_at_the_rating_writes_the_row_without_a_rating():
+    state = press(long_at(51), "q", "a", key.ENTER, key.ESC)
+
+    assert state.effects == (quit_checkpoint("a", None),)
+    assert state.quit is True
+
+
+def test_blank_line_is_stored_as_no_text():
+    state = press(long_at(51), "q", " ", key.ENTER, "n")
+
+    assert state.effects == (quit_checkpoint(None, 0),)
+
+
+@pytest.mark.parametrize("backspace", ["\x7f", "\x08"])
+def test_line_editor_accepts_both_backspace_codes(backspace):
+    state = press(long_at(51), "q", "a", "b", backspace, key.ENTER, "y")
+
+    assert state.effects == (quit_checkpoint("a", 2),)
+
+
+def test_line_editor_takes_a_pasted_burst_and_cyrillic():
+    state = press(long_at(51), "q", "дождь и ", "зонт", key.ENTER, "p")
+
+    assert state.effects == (quit_checkpoint("дождь и зонт", 1),)
+
+
+def test_line_editor_ignores_navigation_keys():
+    state = press(long_at(51), "q", "a", key.LEFT, "j", key.ENTER, "y")
+
+    assert state.effects == (quit_checkpoint("aj", 2),)
+    assert state.index == 50
+
+
+def test_ctrl_c_offers_the_quit_checkpoint_and_a_second_one_skips_it():
+    state = press(long_at(51), key.CTRL_C)
+    assert state.overlay == LINE
+    assert state.quit is False
+
+    state = press(state, "a", key.CTRL_C)
+    assert state.quit is True
+    assert state.effects == ()
+
+
+def test_ctrl_c_at_the_rating_skips_too():
+    state = press(long_at(51), key.CTRL_C, key.ENTER, key.CTRL_C)
+
+    assert state.quit is True
+    assert state.effects == ()
+
+
+def test_ctrl_c_before_500_words_quits():
+    assert press(long_at(2), key.CTRL_C).quit is True
+
+
+def test_recall_off_never_offers_a_checkpoint():
+    settings = Settings(chunk_width=12, theme="dark", recall=False)
+
+    assert press(long_at(51, settings), "q").quit is True
+
+
+def test_backward_reading_does_not_count_toward_the_threshold():
+    state = press(long_at(51), "g", "g", "q")
+
+    assert state.quit is True
+
+
+def test_goal_reached_offers_a_goal_checkpoint_and_reading_continues():
+    # mini_book: goal of 5 words reached on chunk 2 (S2 token 5), 7 words read.
+    state = press(type_command(at(0), "goal 5w"), "j", "j")
+    assert state.message == REACHED
+    assert state.overlay == LINE
+
+    state = press(state, *"ok", key.ENTER, "p")
+    assert state.effects == (Checkpoint("goal", "chunk", 1, 2, 7, "ok", 1),)
+    assert state.overlay is None
+    assert state.quit is False
+
+
+def test_after_a_goal_checkpoint_the_next_span_starts_there():
+    state = press(type_command(at(0), "goal 5w"), "j", "j", key.ENTER, "y")
+    state = press(type_command(state, "goal again"), "j", "j")  # 13 - 7 = 6
+
+    state = press(state, key.ENTER, "y")
+    assert state.effects == (Checkpoint("goal", "chunk", 2, 4, 6, None, 2),)
+
+
+def test_goal_reached_without_recall_has_no_checkpoint():
+    settings = Settings(chunk_width=5, theme="dark", recall=False)
+    state = initial_state(mini_book(), settings, Position(1, 0))
+
+    state = press(type_command(state, "goal 5w"), "j", "j")
+    assert state.message == REACHED
+    assert state.overlay is None
