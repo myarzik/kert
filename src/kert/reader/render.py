@@ -47,8 +47,8 @@ def _wrap(text: Text, width: int) -> list[Text]:
 
 
 def _block_text(state: ReaderState, start: int, end: int, style: str) -> Text:
-    pos = state.chunks.sentence_pos
-    sentences = state.book.sentences[pos[start] : pos[end - 1] + 1]
+    first, (last, _) = state.chunks.sentence_pos[start], state.chunks.ends[end - 1]
+    sentences = state.book.sentences[first : last + 1]
     if state.chunks.block_types[start] == "heading":
         style = f"bold {style}"  # §14.7
     return Text(" ".join(s.text for s in sentences), style=style)
@@ -61,15 +61,19 @@ def _active_block(
     start, end = block_range(state.chunks, state.index)
     text = _block_text(state, start, end, theme.rest)
 
-    pos = state.chunks.sentence_pos
-    offset = 0
-    for sentence in state.book.sentences[pos[start] : pos[state.index]]:
-        offset += len(sentence.text) + 1
-    tokens = state.book.sentences[pos[state.index]].tokens
-    chunk = state.active
-    chunk_start = offset + tokens[chunk.start_token][0]
-    chunk_end = offset + tokens[chunk.end_token - 1][1]
-    text.stylize(theme.active, chunk_start, chunk_end)
+    # Character offset of each of the block's sentences in the block text.
+    sentences = state.book.sentences
+    block_first = state.chunks.sentence_pos[start]
+    offsets = {block_first: 0}
+    for i in range(block_first, state.chunks.ends[end - 1][0]):
+        offsets[i + 1] = offsets[i] + len(sentences[i].text) + 1
+    first, (last, end_token) = (
+        state.chunks.sentence_pos[state.index],
+        state.chunks.ends[state.index],
+    )
+    unit_start = offsets[first] + sentences[first].tokens[state.active.start_token][0]
+    unit_end = offsets[last] + sentences[last].tokens[end_token - 1][1]
+    text.stylize(theme.active, unit_start, unit_end)
 
     lines = _wrap(text, width)
     hits = [

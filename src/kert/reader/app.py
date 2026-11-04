@@ -63,7 +63,9 @@ def feed(
     for effect in state.effects:
         match effect:
             case Advance(sentence_id=sid, chunk_words=words, direction=d, kind=k):
-                store.log_advance(now(), sid, words, d, kind=k)
+                store.log_advance(
+                    now(), sid, words, d, kind=k, mode=state.settings.mode
+                )
             case SaveSetting(key=name, value=value):
                 config.set_setting(store, name, value, config_file)
     return state

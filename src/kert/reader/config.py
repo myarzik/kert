@@ -16,6 +16,7 @@ import platformdirs.windows
 from kert.common.errors import KertError
 
 THEMES = ("dark", "light")
+MODES = ("chunk", "sentence", "paragraph")
 WIDTH_MIN, WIDTH_MAX = 5, 12
 
 
@@ -54,6 +55,10 @@ def _valid_theme(value: object) -> str | None:
     return value if value in THEMES else None
 
 
+def _valid_mode(value: object) -> str | None:
+    return value if value in MODES else None
+
+
 def load_global(path: Path | None = None) -> Settings:
     """TOML layer over hardcoded defaults; never raises on config errors."""
     try:
@@ -80,9 +85,11 @@ def resolve(book: SettingsStore, defaults: Settings) -> Settings:
     """Per-book reader_state over `defaults` (the loaded global layer)."""
     width = _parse_width(book.load_setting("chunk_width"))
     theme = _valid_theme(book.load_setting("theme"))
+    mode = _valid_mode(book.load_setting("mode"))
     return Settings(
         chunk_width=defaults.chunk_width if width is None else width,
         theme=theme or defaults.theme,
+        mode=mode or HARDCODED.mode,  # §17.2: never from the TOML
     )
 
 
@@ -99,6 +106,10 @@ def validate(key: str, raw: str) -> str:
         if _valid_theme(raw) is None:
             raise KertError(f"theme must be one of {', '.join(THEMES)}, got {raw!r}.")
         return raw
+    if key == "mode":
+        if _valid_mode(raw) is None:
+            raise KertError(f"mode must be one of {', '.join(MODES)}, got {raw!r}.")
+        return raw
     raise KertError(f"Unknown setting {key!r}.")
 
 
@@ -108,6 +119,8 @@ def set_setting(
     """Validate, then write `key` to the book and to the global TOML."""
     value = validate(key, raw)
     book.save_setting(key, value)
+    if key == "mode":
+        return  # §17.2: an experimental condition, kept out of the TOML
 
     path = path or config_path()
     current = load_global(path)

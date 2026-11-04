@@ -47,38 +47,77 @@ Effect = Advance | SaveSetting
 
 @dataclass(frozen=True, slots=True)
 class Chunks:
-    """Book-wide chunk list at one width, with per-chunk lookup columns."""
+    """Book-wide list of reading units at one width and mode (§6, §17.2).
+
+    A unit is a chunk, a sentence or a whole block. `spans[i]` anchors unit i
+    at its first sentence and token; `ends[i]` is the (sentence index, end
+    token) where it stops, possibly in a later sentence of the same block.
+    """
 
     spans: tuple[ChunkSpan, ...]
+    ends: tuple[tuple[int, int], ...]
     words: tuple[int, ...]
     words_before: tuple[int, ...]
     block_ids: tuple[int, ...]
     block_types: tuple[str, ...]
-    sentence_pos: tuple[int, ...]  # index of each chunk's sentence in Book.sentences
+    sentence_pos: tuple[
+        int, ...
+    ]  # index of each unit's first sentence in Book.sentences
 
 
-def build_chunks(book: Book, width: int) -> Chunks:
-    by_id = {s.id: s for s in book.sentences}
+def _units(book: Book, width: int, mode: str) -> list[tuple[ChunkSpan, int, int]]:
+    """(anchor span, last sentence index, end token) of each unit."""
+    pos = {s.id: i for i, s in enumerate(book.sentences)}
+    if mode == "chunk":
+        return [
+            (span, pos[span.sentence_id], span.end_token)
+            for span in assemble(book.sentences, width)
+        ]
+    units: list[tuple[ChunkSpan, int, int]] = []
+    for i, sentence in enumerate(book.sentences):
+        end = len(sentence.tokens)
+        same_block = (
+            units and book.sentences[units[-1][1]].block_id == sentence.block_id
+        )
+        if mode == "paragraph" and same_block:
+            units[-1] = (units[-1][0], i, end)
+        else:
+            units.append((ChunkSpan(sentence.id, 0, end), i, end))
+    return units
+
+
+def _count_words(book: Book, first: int, start: int, last: int, end: int) -> int:
+    total = 0
+    for i in range(first, last + 1):
+        sentence = book.sentences[i]
+        tokens = sentence.tokens[
+            start if i == first else 0 : end if i == last else len(sentence.tokens)
+        ]
+        total += sum(is_word(sentence.text[a:b]) for a, b in tokens)
+    return total
+
+
+def build_chunks(book: Book, width: int, mode: str = "chunk") -> Chunks:
     pos = {s.id: i for i, s in enumerate(book.sentences)}
     types = {b.id: b.type for b in book.blocks}
-    spans = tuple(assemble(book.sentences, width))
+    units = _units(book, width, mode)
     words, before, total = [], [], 0
-    for span in spans:
-        sentence = by_id[span.sentence_id]
-        count = sum(
-            is_word(sentence.text[start:end])
-            for start, end in sentence.tokens[span.start_token : span.end_token]
-        )
+    for span, last, end in units:
+        count = _count_words(book, pos[span.sentence_id], span.start_token, last, end)
         words.append(count)
         before.append(total)
         total += count
+    block_ids = tuple(
+        book.sentences[pos[span.sentence_id]].block_id for span, _, _ in units
+    )
     return Chunks(
-        spans=spans,
+        spans=tuple(span for span, _, _ in units),
+        ends=tuple((last, end) for _, last, end in units),
         words=tuple(words),
         words_before=tuple(before),
-        block_ids=tuple(by_id[s.sentence_id].block_id for s in spans),
-        block_types=tuple(types[by_id[s.sentence_id].block_id] for s in spans),
-        sentence_pos=tuple(pos[s.sentence_id] for s in spans),
+        block_ids=block_ids,
+        block_types=tuple(types[b] for b in block_ids),
+        sentence_pos=tuple(pos[span.sentence_id] for span, _, _ in units),
     )
 
 
@@ -93,13 +132,20 @@ def block_range(chunks: Chunks, index: int) -> tuple[int, int]:
     return start, end
 
 
-def _resolve(chunks: Chunks, sentence_id: int, token: int) -> int:
-    """Chunk containing `token`, else the sentence's first chunk, else 0 (§5)."""
+def _resolve(book: Book, chunks: Chunks, sentence_id: int, token: int) -> int:
+    """Unit containing `token`, else the sentence's first unit, else 0 (§5)."""
+    target = next(
+        (i for i, s in enumerate(book.sentences) if s.id == sentence_id), None
+    )
+    if target is None:
+        return 0
     first = None
     for i, span in enumerate(chunks.spans):
-        if span.sentence_id != sentence_id:
+        last, end = chunks.ends[i]
+        if not chunks.sentence_pos[i] <= target <= last:
             continue
-        if span.start_token <= token < span.end_token:
+        lo = span.start_token if chunks.sentence_pos[i] == target else 0
+        if lo <= token and (last > target or token < end):
             return i
         if first is None:
             first = i
@@ -142,8 +188,8 @@ def initial_state(
     position: Position,
     size: tuple[int, int] = (80, 24),
 ) -> ReaderState:
-    chunks = build_chunks(book, settings.chunk_width)
-    index = _resolve(chunks, position.sentence_id, position.chunk_start_token)
+    chunks = build_chunks(book, settings.chunk_width, settings.mode)
+    index = _resolve(book, chunks, position.sentence_id, position.chunk_start_token)
     return ReaderState(book, settings, chunks, index, size=size)
 
 
@@ -289,22 +335,27 @@ def _goto(state: ReaderState, percent: float) -> ReaderState:
     return _move(state, index, "jump")
 
 
+_FEEDBACK = {"chunk_width": "width"}  # :set names that differ from storage keys
+
+
 def _set(state: ReaderState, key: str, value: str) -> ReaderState:
     effects = (SaveSetting(key, value),)
+    message = f"{_FEEDBACK.get(key, key)}={value}"
     if key == "theme":
         settings = replace(state.settings, theme=value)
-        return replace(
-            state, settings=settings, effects=effects, message=f"theme={value}"
-        )
-    settings = replace(state.settings, chunk_width=int(value))
-    chunks = build_chunks(state.book, settings.chunk_width)
+        return replace(state, settings=settings, effects=effects, message=message)
+    if key == "mode":
+        settings = replace(state.settings, mode=value)
+    else:
+        settings = replace(state.settings, chunk_width=int(value))
+    chunks = build_chunks(state.book, settings.chunk_width, settings.mode)
     active = state.active
-    index = _resolve(chunks, active.sentence_id, active.start_token)
+    index = _resolve(state.book, chunks, active.sentence_id, active.start_token)
     return replace(
         state,
         settings=settings,
         chunks=chunks,
         index=index,
         effects=effects,
-        message=f"width={value}",
+        message=message,
     )

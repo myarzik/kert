@@ -25,7 +25,7 @@ class QuitCommand:
 
 Command = SetCommand | GotoCommand | QuitCommand
 
-_SET_KEYS = {"width": "chunk_width", "theme": "theme"}
+_SET_KEYS = {"width": "chunk_width", "theme": "theme", "mode": "mode"}
 
 
 def parse_command(text: str) -> Command:
@@ -43,7 +43,9 @@ def parse_command(text: str) -> Command:
 def _parse_set(arg: str) -> SetCommand:
     name, eq, raw = arg.partition("=")
     if not eq:
-        raise KertError("Usage: :set width=N | :set theme=dark|light")
+        raise KertError(
+            "Usage: :set width=N | theme=dark|light | mode=chunk|sentence|paragraph"
+        )
     key = _SET_KEYS.get(name.strip())
     if key is None:
         raise KertError(f"Unknown setting: {name.strip()}")
