@@ -7,6 +7,11 @@ enum class Theme(val storage: String) { DARK("dark"), LIGHT("light") }
 /** §17.2 reading modes; the unit highlighted and stepped through. */
 enum class Mode(val storage: String) { CHUNK("chunk"), SENTENCE("sentence"), PARAGRAPH("paragraph") }
 
+enum class GoalUnit(val storage: String, val max: Int) { MINUTES("m", 600), WORDS("w", 100_000) }
+
+/** A session goal (§17.6): [amount] minutes or words, counted from when it was armed. */
+data class Goal(val amount: Int, val unit: GoalUnit, val armedAt: Double, val startWords: Int)
+
 data class Settings(val chunkWidth: Int, val theme: Theme, val mode: Mode = Mode.CHUNK)
 
 sealed interface Action {
@@ -24,6 +29,9 @@ sealed interface Action {
     data object PeekStart : Action
     data object PeekEnd : Action
     data class SetMode(val mode: Mode) : Action
+    data class SetGoal(val amount: Int, val unit: GoalUnit) : Action
+    data object GoalOff : Action
+    data object GoalAgain : Action
 }
 
 sealed interface Effect {
@@ -115,6 +123,11 @@ data class ReaderState(
     val chunks: Chunks,
     val index: Int,
     val peek: Boolean = false,
+    val now: Double = 0.0,
+    val log: List<LogRow> = emptyList(),
+    val goal: Goal? = null,
+    val lastGoal: Pair<Int, GoalUnit>? = null,
+    val message: String? = null,
     val effects: List<Effect> = emptyList(),
 ) {
     val active: ChunkSpan get() = chunks.spans[index]
@@ -131,6 +144,9 @@ data class ReaderState(
 object Reader {
     const val WIDTH_MIN = 5
     const val WIDTH_MAX = 12
+    const val GOAL_REACHED = "goal reached"
+
+    fun goalSegment(state: ReaderState): String? = TODO()
 
     fun initial(book: BookContent, settings: Settings, position: Position): ReaderState {
         val chunks = Chunks.build(book, settings.chunkWidth, settings.mode)
@@ -164,6 +180,7 @@ object Reader {
             Action.NextSentence -> nextSentence(s)
             Action.PeekStart -> peek(s)
             Action.PeekEnd -> s
+            is Action.SetGoal, Action.GoalOff, Action.GoalAgain -> TODO()
             is Action.SetMode -> reassemble(
                 s, s.settings.copy(mode = action.mode), Effect.SaveSetting("mode", action.mode.storage),
             )

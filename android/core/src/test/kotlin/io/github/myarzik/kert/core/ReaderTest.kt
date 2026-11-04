@@ -2,6 +2,7 @@ package io.github.myarzik.kert.core
 
 import java.nio.file.Path
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -365,5 +366,89 @@ class ReaderTest {
                 assertEquals(expected, actual, "${reference.file} mode=$name")
             }
         }
+    }
+
+    // --- R5 session goal (§17.6, §17.12) -------------------------------------------------------
+    // mini book at W=5: words before each chunk 0, 2, 7, 11, 13, 18.
+
+    private fun ReaderState.at(now: Double) = copy(now = now)
+
+    @Test
+    fun `goal in words is reached by reading from the arming place`() {
+        var state = at(0).then(Action.SetGoal(5, GoalUnit.WORDS))
+        assertEquals("goal 5w", state.message)
+        state = state.then(Action.Next)
+        assertNull(state.message)
+        state = state.then(Action.Next)
+        assertEquals(Reader.GOAL_REACHED, state.message)
+        assertNull(state.goal)
+    }
+
+    @Test
+    fun `goal again rearms from the current place`() {
+        val state = at(0).then(Action.SetGoal(5, GoalUnit.WORDS), Action.Next, Action.Next, Action.GoalAgain)
+        assertEquals("goal 5w", state.message)
+        assertNull(state.then(Action.Next).message)
+        assertEquals(Reader.GOAL_REACHED, state.then(Action.Next, Action.Next).message)
+    }
+
+    @Test
+    fun `goal again without a previous goal`() {
+        val state = at(0).then(Action.GoalAgain)
+        assertNull(state.goal)
+        assertEquals("no goal to re-arm", state.message)
+    }
+
+    @Test
+    fun `goal off clears the goal`() {
+        val state = at(0).then(Action.SetGoal(5, GoalUnit.WORDS), Action.GoalOff)
+        assertNull(state.goal)
+        assertEquals("goal off", state.message)
+        assertNull(state.then(Action.Next, Action.Next).message)
+    }
+
+    @ParameterizedTest
+    @CsvSource("0,WORDS", "100001,WORDS", "0,MINUTES", "601,MINUTES")
+    fun `out of range goals are ignored`(amount: Int, unit: GoalUnit) =
+        assertNull(at(0).then(Action.SetGoal(amount, unit)).goal)
+
+    @Test
+    fun `moves are kept as log rows with the clock`() =
+        assertEquals(LogRow(5.0, 2, 1, "step", "chunk"), Reader.reduce(at(0).at(5.0), Action.Next).log.last())
+
+    @Test
+    fun `goal in minutes counts active reading time`() {
+        var state = Reader.reduce(at(0).at(100.0), Action.SetGoal(1, GoalUnit.MINUTES))
+        state = Reader.reduce(state.at(100.0), Action.Next) // first row: no dwell yet
+        state = Reader.reduce(state.at(130.0), Action.Next) // 30 s
+        assertNull(state.message)
+        state = Reader.reduce(state.at(161.0), Action.Next) // 61 s
+        assertEquals(Reader.GOAL_REACHED, state.message)
+    }
+
+    @Test
+    fun `idle time does not count toward a minutes goal`() {
+        var state = Reader.reduce(at(0).at(100.0), Action.SetGoal(1, GoalUnit.MINUTES))
+        state = Reader.reduce(state.at(100.0), Action.Next)
+        state = Reader.reduce(state.at(200.0), Action.Next) // 100 s: idle, discarded
+        assertNull(state.message)
+    }
+
+    // --- Goal status segment (tests/test_render.py §17.6) --------------------------------------
+
+    private fun fastLog() = List(31) { LogRow(1000.0 + it * 2.0, 4, 1, "step", "chunk") }
+
+    /** Clock past the log, so none of its dwells count after arming. */
+    private fun goalAt(amount: Int, unit: GoalUnit, log: List<LogRow> = emptyList()) =
+        Reader.reduce(at(0).copy(now = 2000.0, log = log), Action.SetGoal(amount, unit))
+
+    @Test
+    fun `goal segments`() {
+        assertEquals("▸ 20 w", Reader.goalSegment(goalAt(20, GoalUnit.WORDS)))
+        assertEquals("▸ 20 w · ~1 min", Reader.goalSegment(goalAt(20, GoalUnit.WORDS, fastLog())))
+        assertEquals("▸ 6 min", Reader.goalSegment(goalAt(6, GoalUnit.MINUTES)))
+        assertEquals("▸ 6 min · ~720 w", Reader.goalSegment(goalAt(6, GoalUnit.MINUTES, fastLog())))
+        assertEquals("▸ 18 w", Reader.goalSegment(goalAt(20, GoalUnit.WORDS).then(Action.Next)))
+        assertNull(Reader.goalSegment(at(0)))
     }
 }
