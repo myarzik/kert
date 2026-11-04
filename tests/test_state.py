@@ -12,6 +12,7 @@ from kert.reader.state import (
     handle_key,
     initial_state,
     recap_start,
+    start_session,
 )
 from kert.reader.store import Position
 from kert.reader.tempo import LogRow
@@ -673,8 +674,10 @@ def reopened(index, gap, settings=W5, log_rows=1):
     book = mini_book()
     starts = [(1, 0), (2, 0), (2, 5), (3, 0), (4, 0), (4, 5)]
     log = tuple(LogRow(1000.0 - i, 2, 1, "step", "chunk") for i in range(log_rows))
-    return initial_state(
-        book, settings, Position(*starts[index]), now=1000.0 + gap, log=log
+    return start_session(
+        initial_state(
+            book, settings, Position(*starts[index]), now=1000.0 + gap, log=log
+        )
     )
 
 

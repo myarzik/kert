@@ -138,6 +138,34 @@ class BookStore:
         ).fetchall()
         return tuple(LogRow(*row) for row in reversed(rows))
 
+    def add_checkpoint(
+        self,
+        ts: float,
+        trigger: str,
+        mode: str,
+        span_start_sentence: int,
+        span_end_sentence: int,
+        span_words: int,
+        recall_text: str | None,
+        self_rating: int | None,
+    ) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO checkpoints (ts, trigger, mode, span_start_sentence, "
+                "span_end_sentence, span_words, recall_text, self_rating) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    ts,
+                    trigger,
+                    mode,
+                    span_start_sentence,
+                    span_end_sentence,
+                    span_words,
+                    recall_text,
+                    self_rating,
+                ),
+            )
+
     def trim_advance_log(self, keep: int) -> None:
         """Delete all but the `keep` newest advance_log rows."""
         with self._conn:

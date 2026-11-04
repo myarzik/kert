@@ -7,7 +7,8 @@ to the next (SPEC_NOTES, Task 8). The TOML stores preferences only.
 import re
 import sys
 import tomllib
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -52,14 +53,38 @@ def config_path() -> Path:
     return dirs.user_config_path / "config.toml"
 
 
-def _valid_width(value: object) -> int | None:
-    if type(value) is int and WIDTH_MIN <= value <= WIDTH_MAX:
-        return value
-    return None
+def _int_range(low: int, high: int) -> Callable[[object], int | None]:
+    def parse(value: object) -> int | None:
+        return value if type(value) is int and low <= value <= high else None
+
+    return parse
 
 
-def _valid_theme(value: object) -> str | None:
-    return value if value in THEMES else None
+def _choice(options: tuple[str, ...]) -> Callable[[object], str | None]:
+    return lambda value: value if value in options else None
+
+
+def _switch(value: object) -> bool | None:
+    return {"on": True, "off": False}.get(value) if isinstance(value, str) else None
+
+
+# Settings key -> (parser of a typed value, what a valid value is, TOML layer).
+# Keys are the Settings field names and the reader_state keys (§8.4, §17.10).
+_KEYS: dict[str, tuple[Callable[[object], object], str, bool]] = {
+    "chunk_width": (
+        _int_range(WIDTH_MIN, WIDTH_MAX),
+        f"an integer {WIDTH_MIN}..{WIDTH_MAX}",
+        True,
+    ),
+    "theme": (_choice(THEMES), f"one of {', '.join(THEMES)}", True),
+    # §17.2: an experimental condition, kept out of the TOML.
+    "mode": (_choice(MODES), f"one of {', '.join(MODES)}", False),
+    "recap": (_switch, "on or off", True),
+    "recap_words": (_int_range(10, 120), "an integer 10..120", True),
+    "recall": (_switch, "on or off", True),
+    "recall_gap_minutes": (_int_range(5, 1440), "an integer 5..1440", True),
+}
+_INT_KEYS = {"chunk_width", "recap_words", "recall_gap_minutes"}
 
 
 def parse_goal(raw: object) -> tuple[int, str] | None:
@@ -71,8 +96,17 @@ def parse_goal(raw: object) -> tuple[int, str] | None:
     return (amount, unit) if 1 <= amount <= GOAL_MAX[unit] else None
 
 
-def _valid_mode(value: object) -> str | None:
-    return value if value in MODES else None
+def _from_text(key: str, raw: str | None) -> object:
+    """A reader_state or `:set` text as the setting's value, None if invalid."""
+    if raw is None:
+        return None
+    value: object = raw
+    if key in _INT_KEYS:
+        try:
+            value = int(raw)
+        except ValueError:
+            return None
+    return _KEYS[key][0](value)
 
 
 def load_global(path: Path | None = None) -> Settings:
@@ -82,74 +116,61 @@ def load_global(path: Path | None = None) -> Settings:
             data = tomllib.load(f)
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return HARDCODED
-    width = _valid_width(data.get("chunk_width"))
-    theme = _valid_theme(data.get("theme"))
+    values = {}
+    for key, (parse, _, in_toml) in _KEYS.items():
+        if in_toml and (value := parse(data.get(key))) is not None:
+            values[key] = value
     goal = data.get("default_goal")
-    return Settings(
-        chunk_width=HARDCODED.chunk_width if width is None else width,
-        theme=theme or HARDCODED.theme,
-        default_goal=goal if parse_goal(goal) else None,
-    )
-
-
-def _parse_width(raw: str | None) -> int | None:
-    try:
-        return None if raw is None else _valid_width(int(raw))
-    except ValueError:
-        return None
+    if parse_goal(goal):
+        values["default_goal"] = goal
+    return replace(HARDCODED, **values)
 
 
 def resolve(book: SettingsStore, defaults: Settings) -> Settings:
     """Per-book reader_state over `defaults` (the loaded global layer)."""
-    width = _parse_width(book.load_setting("chunk_width"))
-    theme = _valid_theme(book.load_setting("theme"))
-    mode = _valid_mode(book.load_setting("mode"))
-    return Settings(
-        chunk_width=defaults.chunk_width if width is None else width,
-        theme=theme or defaults.theme,
-        mode=mode or HARDCODED.mode,  # §17.2: never from the TOML
-        default_goal=defaults.default_goal,
-    )
+    values = {}
+    for key in _KEYS:
+        if (value := _from_text(key, book.load_setting(key))) is not None:
+            values[key] = value
+    return replace(defaults, **values)
 
 
 def validate(key: str, raw: str) -> str:
     """Normalized storage value for `key`, or KertError if it is invalid."""
-    if key == "chunk_width":
-        width = _parse_width(raw)
-        if width is None:
-            raise KertError(
-                f"chunk_width must be an integer {WIDTH_MIN}..{WIDTH_MAX}, got {raw!r}."
-            )
-        return str(width)
-    if key == "theme":
-        if _valid_theme(raw) is None:
-            raise KertError(f"theme must be one of {', '.join(THEMES)}, got {raw!r}.")
-        return raw
-    if key == "mode":
-        if _valid_mode(raw) is None:
-            raise KertError(f"mode must be one of {', '.join(MODES)}, got {raw!r}.")
-        return raw
-    raise KertError(f"Unknown setting {key!r}.")
+    if key not in _KEYS:
+        raise KertError(f"Unknown setting {key!r}.")
+    value = _from_text(key, raw)
+    if value is None:
+        raise KertError(f"{key} must be {_KEYS[key][1]}, got {raw!r}.")
+    return str(value) if key in _INT_KEYS else raw
+
+
+def _toml_value(value: object) -> str:
+    if isinstance(value, bool):
+        return '"on"' if value else '"off"'
+    return str(value) if isinstance(value, int) else f'"{value}"'
 
 
 def set_setting(
     book: SettingsStore, key: str, raw: str, path: Path | None = None
 ) -> None:
-    """Validate, then write `key` to the book and to the global TOML."""
+    """Validate, then write `key` to the book and, for TOML keys, the global TOML."""
     value = validate(key, raw)
     book.save_setting(key, value)
-    if key == "mode":
-        return  # §17.2: an experimental condition, kept out of the TOML
+    if not _KEYS[key][2]:
+        return
 
     path = path or config_path()
-    current = load_global(path)
-    width = int(value) if key == "chunk_width" else current.chunk_width
-    theme = value if key == "theme" else current.theme
+    updated = replace(load_global(path), **{key: _from_text(key, value)})
+    lines = [
+        f"{name} = {_toml_value(getattr(updated, name))}"
+        for name, (_, _, in_toml) in _KEYS.items()
+        if in_toml
+    ]
+    if updated.default_goal:
+        lines.append(f'default_goal = "{updated.default_goal}"')
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        text = f'chunk_width = {width}\ntheme = "{theme}"\n'
-        if current.default_goal:
-            text += f'default_goal = "{current.default_goal}"\n'
-        path.write_text(text, encoding="utf-8")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except OSError:
         pass  # never crash on config errors (§8.4); the book layer is saved

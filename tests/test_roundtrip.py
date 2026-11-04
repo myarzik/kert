@@ -133,8 +133,10 @@ def test_resumes_inside_a_sentence_at_new_width(book_path, toml):
         store, state, [":", *"set width=6", key.ENTER, "j", "j"], toml, lambda: 1.0
     )
     close_session(store, state)
-    store, state = open_session(book_path, config_file=toml)
-    state = type_keys(store, state, [":", *"set width=8", key.ENTER], toml, lambda: 1.0)
+    # Reopened mid-book right away: the recap (§17.7) takes the first key.
+    store, state = open_session(book_path, config_file=toml, now=lambda: 1.0)
+    keys = ["x", ":", *"set width=8", key.ENTER]
+    state = type_keys(store, state, keys, toml, lambda: 1.0)
     assert state.index == 1
     close_session(store, state)
 

@@ -32,7 +32,16 @@ class GoalCommand:
 
 Command = SetCommand | GotoCommand | QuitCommand | GoalCommand
 
-_SET_KEYS = {"width": "chunk_width", "theme": "theme", "mode": "mode"}
+# `:set` name -> storage key; §17.10 keys are spelled as stored.
+_SET_KEYS = {
+    "width": "chunk_width",
+    "theme": "theme",
+    "mode": "mode",
+    "recap": "recap",
+    "recap_words": "recap_words",
+    "recall": "recall",
+    "recall_gap_minutes": "recall_gap_minutes",
+}
 
 
 def parse_command(text: str) -> Command:

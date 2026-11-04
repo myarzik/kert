@@ -184,7 +184,14 @@ def test_set_writes_valid_toml(toml):
     set_setting(FakeBook(), "chunk_width", "12", toml)
 
     with toml.open("rb") as f:
-        assert tomllib.load(f) == {"chunk_width": 12, "theme": "light"}
+        assert tomllib.load(f) == {
+            "chunk_width": 12,
+            "theme": "light",
+            "recap": "on",
+            "recap_words": 40,
+            "recall": "on",
+            "recall_gap_minutes": 60,
+        }
 
 
 def test_set_replaces_corrupt_toml_with_known_keys(toml):

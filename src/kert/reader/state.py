@@ -234,8 +234,31 @@ def initial_state(
     return _arm(state, *default) if default else state
 
 
+def start_session(state: ReaderState) -> ReaderState:
+    """Open a reading session: the re-entry flow of §17.7, if any."""
+    return replace(state, overlay=_entry_overlay(state))
+
+
 def recap_start(state: ReaderState) -> int | None:
-    raise NotImplementedError
+    """First unit of the recap (§17.7): whole units back to `recap_words`."""
+    if state.index == 0:
+        return None
+    start, words = state.index - 1, state.chunks.words[state.index - 1]
+    while start > 0 and words < state.settings.recap_words:
+        start -= 1
+        words += state.chunks.words[start]
+    return start
+
+
+def _entry_overlay(state: ReaderState) -> str | None:
+    """Re-entry flow (§17.7): recall prompt after a long gap, else the recap."""
+    if state.index == 0:
+        return None
+    if state.log and state.settings.recall:
+        gap = state.now - max(row.ts for row in state.log)
+        if gap >= state.settings.recall_gap_minutes * 60:
+            return "recall"
+    return "recap" if state.settings.recap else None
 
 
 def goal_words_left(state: ReaderState) -> int:
@@ -280,7 +303,34 @@ def _arm(state: ReaderState, amount: int, unit: str) -> ReaderState:
     return replace(state, goal=goal, last_goal=(amount, unit))
 
 
+_RATINGS = {"y": 2, "p": 1, "n": 0, keys.ESC: None}
+
+
+def _overlay_key(state: ReaderState, key: str) -> ReaderState:
+    """Keys on the re-entry screens (§17.7); every key here is consumed."""
+    if state.overlay == "recall":
+        return replace(state, overlay="rating")
+    if state.overlay == "rating":
+        if key not in _RATINGS:
+            return state
+        sentence_id = state.active.sentence_id
+        row = Checkpoint(
+            trigger="open",
+            mode=state.settings.mode,
+            span_start_sentence=sentence_id,
+            span_end_sentence=sentence_id,
+            span_words=0,
+            recall_text=None,
+            self_rating=_RATINGS[key],
+        )
+        after = "recap" if state.settings.recap else None
+        return replace(state, overlay=after, effects=(row,))
+    return replace(state, overlay=None)  # recap: any key starts reading
+
+
 def _dispatch(state: ReaderState, key: str) -> ReaderState:
+    if state.overlay is not None:
+        return _overlay_key(state, key)
     if state.peek:
         return replace(state, peek=False)  # §17.3: the key that ends peek is consumed
     if state.command is not None:

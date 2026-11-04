@@ -19,10 +19,12 @@ from kert.reader.state import (
     LOG_KEEP,
     Advance,
     Book,
+    Checkpoint,
     ReaderState,
     SaveSetting,
     handle_key,
     initial_state,
+    start_session,
 )
 from kert.reader.store import BookStore
 
@@ -55,6 +57,7 @@ def open_session(
             now=now(),
             log=store.recent_advances(LOG_KEEP),
         )
+        state = start_session(state)
     except BaseException:
         store.close()
         raise
@@ -76,6 +79,17 @@ def feed(
             case Advance(sentence_id=sid, chunk_words=words, direction=d, kind=k):
                 store.log_advance(
                     state.now, sid, words, d, kind=k, mode=state.settings.mode
+                )
+            case Checkpoint() as row:
+                store.add_checkpoint(
+                    state.now,
+                    row.trigger,
+                    row.mode,
+                    row.span_start_sentence,
+                    row.span_end_sentence,
+                    row.span_words,
+                    row.recall_text,
+                    row.self_rating,
                 )
             case SaveSetting(key=name, value=value):
                 config.set_setting(store, name, value, config_file)

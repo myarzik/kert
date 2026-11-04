@@ -526,27 +526,34 @@ def test_goal_segment_updates_while_reading():
 # --- R3/R4 re-entry frames (§17.7) ----------------------------------------------------
 
 
-def reopened_at(position, gap, settings=DARK):
+def reopened_at(position, gap, settings=DARK, size=(44, 12)):
     from kert.reader.tempo import LogRow
 
     log = (LogRow(1000.0, 2, 1, "step", "chunk"),)
-    return initial_state(
-        mini_book(), settings, position, size=(44, 12), now=1000.0 + gap, log=log
+    from kert.reader.state import start_session
+
+    return start_session(
+        initial_state(
+            mini_book(), settings, position, size=size, now=1000.0 + gap, log=log
+        )
     )
 
 
 def test_recall_prompt_clears_the_pane():
-    frame = lines(reopened_at(Position(4, 0), 3600.0))
+    # 60 columns: the 56-wide text column fits the prompt beside the percent.
+    frame = lines(reopened_at(Position(4, 0), 3600.0, size=(60, 12)))
 
     assert frame[:-1] == [""] * 11
-    assert frame[-1] == status("59.1%", left="recall: what was happening? — any key")
+    assert frame[-1] == status(
+        "59.1%", left="recall: what was happening? — any key", width=56
+    )
 
 
 def test_rating_prompt():
-    state = handle_key(reopened_at(Position(4, 0), 3600.0), "x")
+    state = handle_key(reopened_at(Position(4, 0), 3600.0, size=(60, 12)), "x")
 
     assert lines(state)[-1] == status(
-        "59.1%", left="y recalled / p partial / n blank / Esc skip"
+        "59.1%", left="y recalled / p partial / n blank / Esc skip", width=56
     )
 
 

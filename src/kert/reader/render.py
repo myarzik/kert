@@ -11,6 +11,7 @@ from kert.reader.state import (
     block_range,
     goal_seconds_left,
     goal_words_left,
+    recap_start,
 )
 from kert.reader.tempo import tempo_wps
 from kert.reader.theme import THEMES, Theme
@@ -18,6 +19,12 @@ from kert.reader.theme import THEMES, Theme
 MAX_TEXT_WIDTH = 88
 MIN_COLUMNS = 40
 NARROW_NOTICE = f"Terminal too narrow: {MIN_COLUMNS}+ columns needed"
+# §17.7 re-entry screens: the status prompt of each overlay.
+PROMPTS = {
+    "recall": "recall: what was happening? — any key",
+    "rating": "y recalled / p partial / n blank / Esc skip",
+    "recap": "recap — any key",
+}
 
 
 def build_frame(state: ReaderState) -> RenderableType:
@@ -32,6 +39,14 @@ def build_frame(state: ReaderState) -> RenderableType:
 
     # Center focus (§7.1): the chunk's first line sits on row (H - h) // 2 and
     # the text runs above and below it as one tape, cut at the screen edges.
+    if state.overlay is not None:
+        content = (
+            _recap(state, height, width, theme) if state.overlay == "recap" else []
+        )
+        content += [Text()] * (height - len(content))
+        content.append(_status(state, width, theme))
+        return Group(*(Text(margin) + line if line else line for line in content))
+
     # Peek (§17.3) frames the previous chunk as if it were active; the real
     # one is then plain rest-of-block text. The status line stays real.
     view = replace(state, index=state.index - 1) if state.peek else state
@@ -119,8 +134,44 @@ def _tape_below(
     return rows[:space]
 
 
+def _unit_text(state: ReaderState, index: int) -> str:
+    sentences, chunks = state.book.sentences, state.chunks
+    first, start_token = chunks.sentence_pos[index], chunks.spans[index].start_token
+    last, end_token = chunks.ends[index]
+    parts = []
+    for i in range(first, last + 1):
+        sentence = sentences[i]
+        lo = sentence.tokens[start_token][0] if i == first else 0
+        hi = sentence.tokens[end_token - 1][1] if i == last else len(sentence.text)
+        parts.append(sentence.text[lo:hi])
+    return " ".join(parts)
+
+
+def _recap(state: ReaderState, height: int, width: int, theme: Theme) -> list[Text]:
+    """Recap units (§17.7) in rest style, ending just above the center row."""
+    start = recap_start(state)
+    rows: list[Text] = []
+    i = start if start is not None else state.index
+    while i < state.index:
+        block_end = min(block_range(state.chunks, i)[1], state.index)
+        style = theme.rest
+        if state.chunks.block_types[i] == "heading":
+            style = f"bold {style}"  # §14.7
+        text = " ".join(_unit_text(state, j) for j in range(i, block_end))
+        rows += [*([Text()] if rows else []), *_wrap(Text(text, style=style), width)]
+        i = block_end
+    space = (height - 1) // 2
+    rows = rows[max(0, len(rows) - space) :] if space else []
+    return [*([Text()] * (space - len(rows))), *rows]
+
+
 def _status(state: ReaderState, width: int, theme: Theme) -> Text:
-    left = f":{state.command}" if state.command is not None else state.message or ""
+    if state.overlay is not None:
+        left = PROMPTS[state.overlay]
+    elif state.command is not None:
+        left = f":{state.command}"
+    else:
+        left = state.message or ""
     right = _goal_segment(state) + f"{state.percent:.1f}%"
     left = left[: max(0, width - len(right) - 1)]
     return Text(
