@@ -126,7 +126,7 @@ class ReaderTest {
     }
 
     @Test
-    fun `effects are per action`() = assertEquals(emptyList<Effect>(), at(1).then(Action.Next, Action.First).effects)
+    fun `effects are per action`() = assertEquals(emptyList<Effect>(), at(1).then(Action.Next, Action.PeekEnd).effects)
 
     // --- Block and book jumps (logged per §17.4) ---------------------------------------------
 

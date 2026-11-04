@@ -36,12 +36,15 @@ class ReadingSession private constructor(
         for (effect in state.effects) {
             when (effect) {
                 is Effect.Advance -> db.execute(
-                    "INSERT INTO advance_log (ts, sentence_id, chunk_words, direction) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO advance_log (ts, sentence_id, chunk_words, direction, kind, mode) " +
+                        "VALUES (?, ?, ?, ?, ?, ?)",
                     clock(), effect.sentenceId, effect.chunkWords, effect.direction,
+                    effect.kind, state.settings.mode.storage,
                 )
                 is Effect.SaveSetting -> {
                     saveState(db, effect.key, effect.value)
-                    defaults.save(effect.key, effect.value)
+                    // §17.2: the mode is an experimental condition, kept per book only.
+                    if (effect.key != "mode") defaults.save(effect.key, effect.value)
                 }
             }
         }
@@ -104,7 +107,8 @@ class ReadingSession private constructor(
             val theme = loadState(db, "theme")?.let { v -> Theme.entries.find { it.storage == v } }
                 ?: defaults.theme
                 ?: fallback.theme
-            return Settings(width, theme)
+            val mode = loadState(db, "mode")?.let { v -> Mode.entries.find { it.storage == v } } ?: Mode.CHUNK
+            return Settings(width, theme, mode)
         }
 
         internal fun loadState(db: SqlConnection, key: String): String? =

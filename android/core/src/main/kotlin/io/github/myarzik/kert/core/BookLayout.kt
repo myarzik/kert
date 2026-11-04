@@ -30,13 +30,18 @@ class BookLayout(book: BookContent) {
     fun blockIndex(state: ReaderState, chunk: Int): Int =
         placement.getValue(state.chunks.spans[chunk].sentenceId).first
 
-    /** The active chunk: its block index and inclusive UTF-16 range in that block's text. */
+    /**
+     * The active unit (the peeked one while peeking, §17.3): its block index and
+     * UTF-16 range in that block's text. A unit may span several sentences (§17.2).
+     */
     fun active(state: ReaderState): Pair<Int, IntRange> {
-        val span = state.active
+        val index = if (state.peek) state.index - 1 else state.index
+        val span = state.chunks.spans[index]
         val (block, offset) = placement.getValue(span.sentenceId)
-        val tokens = sentences.getValue(span.sentenceId).tokens
-        val start = offset + tokens[span.startToken].start
-        val end = offset + tokens[span.endToken - 1].end
+        val start = offset + sentences.getValue(span.sentenceId).tokens[span.startToken].start
+        val (lastPos, endToken) = state.chunks.ends[index]
+        val last = state.book.sentences[lastPos]
+        val end = placement.getValue(last.id).second + last.tokens[endToken - 1].end
         return block to (start until end)
     }
 }

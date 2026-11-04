@@ -54,3 +54,4 @@ Deviations and resolutions against `kert_spec.md`. One line per entry.
 - Task 32, test_state::long_book: RED-test bug, its `w0`…`w9` tokens are not words under the word predicate (alphabetic or numeric), so the book had 0 words; now ten alphabetic words per sentence.
 - Task 32, test_state::test_goal_again_rearms_from_the_current_place, §17.8: reaching the goal now offers the goal checkpoint; the test presses Esc to skip it before `:goal again`. Asserted behavior unchanged.
 - §8.3 amendment (2026-11-04, user-approved): POSIX key reading moved from readchar.readkey into keys.py with a 50 ms Esc timeout and no input flush; Windows unchanged.
+- Task 36, ReaderTest::`effects are per action`, §17.4: `First` now logs a `jump`, so the no-op second action is `PeekEnd` outside peek (the Python test uses an unknown key).
