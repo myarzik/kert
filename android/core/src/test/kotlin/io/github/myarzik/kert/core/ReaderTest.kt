@@ -128,25 +128,40 @@ class ReaderTest {
     @Test
     fun `effects are per action`() = assertEquals(emptyList<Effect>(), at(1).then(Action.Next, Action.First).effects)
 
-    // --- Block and book jumps (not logged) ------------------------------------------------------
+    // --- Block and book jumps (logged per §17.4) ---------------------------------------------
+
+    /** (sentence id, words) of each W=5 chunk, see [miniBook]. */
+    private val chunksW5 = listOf(1L to 2, 2L to 5, 2L to 4, 3L to 2, 4L to 5, 4L to 4)
+
+    private fun left(index: Int, direction: Int, kind: String) =
+        chunksW5[index].let { (sid, words) -> Effect.Advance(sid, words, direction, kind) }
+
+    private fun effectsOf(start: Int, index: Int, direction: Int, kind: String) =
+        if (start == index) emptyList() else listOf(left(start, direction, kind))
 
     @ParameterizedTest
     @CsvSource("1,4", "2,4", "3,4", "0,1", "4,4")
     fun `next block goes to its first chunk`(start: Int, index: Int) {
         val state = at(start).then(Action.NextBlock)
         assertEquals(index, state.index)
-        assertEquals(emptyList<Effect>(), state.effects)
+        assertEquals(effectsOf(start, index, 1, "block"), state.effects)
     }
 
     @ParameterizedTest
     @CsvSource("5,1", "4,1", "2,0", "3,0", "0,0")
-    fun `previous block goes to its first chunk`(start: Int, index: Int) =
-        assertEquals(index, at(start).then(Action.PreviousBlock).index)
+    fun `previous block goes to its first chunk`(start: Int, index: Int) {
+        val state = at(start).then(Action.PreviousBlock)
+        assertEquals(index, state.index)
+        assertEquals(effectsOf(start, index, -1, "block"), state.effects)
+    }
 
     @Test
     fun `first and last`() {
         assertEquals(0, at(5).then(Action.First).index)
+        assertEquals(listOf(left(5, -1, "jump")), at(5).then(Action.First).effects)
         assertEquals(5, at(0).then(Action.Last).index)
+        assertEquals(listOf(left(0, 1, "jump")), at(0).then(Action.Last).effects)
+        assertEquals(emptyList<Effect>(), at(0).then(Action.First).effects)
     }
 
     // --- Goto (§8.2) --------------------------------------------------------------------------
@@ -156,7 +171,7 @@ class ReaderTest {
     fun `goto jumps to the chunk nearest in words`(percent: Double, index: Int) {
         val state = at(2).then(Action.GotoPercent(percent))
         assertEquals(index, state.index)
-        assertEquals(emptyList<Effect>(), state.effects)
+        assertEquals(listOf(left(2, if (index > 2) 1 else -1, "jump")), state.effects)
     }
 
     // --- Settings (§5 re-chunk, §8.4) -----------------------------------------------------------
@@ -215,6 +230,140 @@ class ReaderTest {
                 assertEquals(expected.map { it[4] }, chunks.wordsBefore, "${reference.file} W=$width before")
             }
             assertTrue(reference.word_count == book.wordCount)
+        }
+    }
+
+    // --- R1 cheap regressions (§17.3, §17.12) --------------------------------------------------
+
+    @ParameterizedTest
+    @CsvSource("2,1", "1,0", "3,1", "4,3", "0,0")
+    fun `previous sentence`(start: Int, index: Int) {
+        val state = at(start).then(Action.PreviousSentence)
+        assertEquals(index, state.index)
+        assertEquals(effectsOf(start, index, -1, "sentence"), state.effects)
+    }
+
+    @ParameterizedTest
+    @CsvSource("0,1", "1,3", "2,3", "3,4", "4,4", "5,5")
+    fun `next sentence`(start: Int, index: Int) {
+        val state = at(start).then(Action.NextSentence)
+        assertEquals(index, state.index)
+        assertEquals(effectsOf(start, index, 1, "sentence"), state.effects)
+    }
+
+    @Test
+    fun `peek shows the previous unit while held, without moving`() {
+        val held = at(2).then(Action.PeekStart)
+        assertTrue(held.peek)
+        assertEquals(2, held.index)
+        assertEquals(listOf(Effect.Advance(2, 5, 0, "peek")), held.effects)
+
+        val released = held.then(Action.PeekEnd)
+        assertEquals(false, released.peek)
+        assertEquals(emptyList<Effect>(), released.effects)
+    }
+
+    @Test
+    fun `any other action ends peek and is consumed`() {
+        val state = at(2).then(Action.PeekStart, Action.Next)
+        assertEquals(false, state.peek)
+        assertEquals(2, state.index)
+        assertEquals(emptyList<Effect>(), state.effects)
+    }
+
+    @Test
+    fun `peek at the first unit is a no-op`() {
+        val state = at(0).then(Action.PeekStart)
+        assertEquals(false, state.peek)
+        assertEquals(emptyList<Effect>(), state.effects)
+    }
+
+    // --- Reading modes (§17.2) ------------------------------------------------------------------
+
+    private val sentenceMode = W5.copy(mode = Mode.SENTENCE)
+    private val paragraphMode = W5.copy(mode = Mode.PARAGRAPH)
+
+    private fun inMode(settings: Settings, sid: Long, token: Int = 0) =
+        Reader.initial(miniBook(), settings, Position(sid, token))
+
+    @Test
+    fun `mode defaults to chunk`() = assertEquals(Mode.CHUNK, W5.mode)
+
+    @Test
+    fun `sentence mode units are whole sentences`() {
+        val state = inMode(sentenceMode, 2).then(Action.Next)
+        assertEquals(Position(3, 0), state.position)
+        assertEquals(listOf(Effect.Advance(2, 9, 1, "step")), state.effects)
+        assertEquals(11.0 / 22 * 100, state.percent, 1e-9)
+    }
+
+    @Test
+    fun `paragraph mode units are whole blocks`() {
+        val state = inMode(paragraphMode, 2).then(Action.Next)
+        assertEquals(Position(4, 0), state.position)
+        assertEquals(listOf(Effect.Advance(2, 11, 1, "step")), state.effects)
+        assertEquals(13.0 / 22 * 100, state.percent, 1e-9)
+        assertEquals(emptyList<Effect>(), state.then(Action.Next).effects)
+    }
+
+    @ParameterizedTest
+    @CsvSource("3,0,2,0", "2,7,2,0")
+    fun `paragraph mode resolves inside a block to its start`(sid: Long, token: Int, rsid: Long, rtoken: Int) =
+        assertEquals(Position(rsid, rtoken), inMode(paragraphMode, sid, token).position)
+
+    @Test
+    fun `sentence mode resolves mid sentence to its start`() =
+        assertEquals(Position(2, 0), inMode(sentenceMode, 2, 5).position)
+
+    @Test
+    fun `paragraph mode regressions and peek move by block`() {
+        val last = inMode(paragraphMode, 4)
+        assertEquals(Position(2, 0), last.then(Action.PreviousSentence).position)
+        assertEquals(listOf(Effect.Advance(4, 9, -1, "sentence")), last.then(Action.PreviousSentence).effects)
+        assertEquals(Position(2, 0), inMode(paragraphMode, 1).then(Action.NextSentence).position)
+        assertEquals(listOf(Effect.Advance(2, 11, 0, "peek")), last.then(Action.PeekStart).effects)
+    }
+
+    @Test
+    fun `paragraph mode goto is word based`() =
+        assertEquals(Position(4, 0), inMode(paragraphMode, 1).then(Action.GotoPercent(50.0)).position)
+
+    @ParameterizedTest
+    @CsvSource("2,SENTENCE,2", "3,PARAGRAPH,2", "5,PARAGRAPH,4")
+    fun `set mode reassembles and keeps the place`(start: Int, mode: Mode, sid: Long) {
+        val state = at(start).then(Action.SetMode(mode))
+        assertEquals(mode, state.settings.mode)
+        assertEquals(Position(sid, 0), state.position)
+        assertEquals(listOf(Effect.SaveSetting("mode", mode.storage)), state.effects)
+    }
+
+    @Test
+    fun `set mode back to chunk returns to the chunk of the unit start`() =
+        assertEquals(1, at(2).then(Action.SetMode(Mode.SENTENCE), Action.SetMode(Mode.CHUNK)).index)
+
+    @Test
+    fun `width is stored in other modes and used back in chunk mode`() {
+        val state = inMode(sentenceMode, 2).then(Action.SetWidth(8))
+        assertEquals(8, state.settings.chunkWidth)
+        assertEquals(Position(2, 0), state.position)
+        assertEquals(at(1, W8).chunks.spans, state.then(Action.SetMode(Mode.CHUNK)).chunks.spans)
+    }
+
+    @Test
+    fun `mode units match Python for every fixture`() {
+        for (reference in Reference.books) {
+            val book = JdbcConnection(Reference.copy(reference.file, tmp)).use { KertReader.read(it) }
+            for ((name, expected) in reference.modes) {
+                val chunks = Chunks.build(book, 5, Mode.entries.single { it.storage == name })
+                val actual = chunks.spans.indices.map { i ->
+                    val (last, end) = chunks.ends[i]
+                    listOf(
+                        chunks.spans[i].sentenceId.toInt(), chunks.spans[i].startToken,
+                        book.sentences[last].id.toInt(), end, chunks.words[i], chunks.wordsBefore[i],
+                    )
+                }
+                assertEquals(expected, actual, "${reference.file} mode=$name")
+            }
         }
     }
 }

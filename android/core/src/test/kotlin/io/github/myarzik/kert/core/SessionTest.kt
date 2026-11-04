@@ -116,6 +116,35 @@ class SessionTest {
     }
 
     @Test
+    fun `advance_log rows carry the kind and the mode`() {
+        val session = open()
+        session.dispatch(Action.NextBlock) // leaves S1 (block 1)
+        session.dispatch(Action.SetMode(Mode.PARAGRAPH))
+        session.dispatch(Action.Next) // leaves block 2 = S2 + S3: 11 words
+        session.close()
+
+        assertEquals(
+            listOf(listOf("block", "chunk", 2L), listOf("step", "paragraph", 11L)),
+            sql("SELECT kind, mode, chunk_words FROM advance_log ORDER BY id")
+                .map { r -> listOf(r[0], r[1], (r[2] as Number).toLong()) },
+        )
+    }
+
+    @Test
+    fun `mode is saved in the book only and restored`() {
+        val defaults = FakeDefaults()
+        val session = open(defaults)
+        session.dispatch(Action.SetMode(Mode.SENTENCE))
+        session.close()
+
+        assertEquals("sentence", state("mode"))
+        assertEquals(emptyList<Pair<String, String>>(), defaults.saved)
+        val reopened = open()
+        assertEquals(Mode.SENTENCE, reopened.state.settings.mode)
+        reopened.close()
+    }
+
+    @Test
     fun `settings write both the book and the app defaults`() {
         val defaults = FakeDefaults()
         val session = open(defaults)

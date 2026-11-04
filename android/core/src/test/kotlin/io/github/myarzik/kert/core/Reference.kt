@@ -37,4 +37,6 @@ data class ReferenceBook(
     val file: String,
     val word_count: Int,
     val widths: Map<String, List<List<Int>>>,
+    /** §17.12: units per mode as [first sid, start token, last sid, end token, words, before]. */
+    val modes: Map<String, List<List<Int>>>,
 )

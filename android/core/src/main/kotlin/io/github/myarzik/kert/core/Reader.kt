@@ -4,7 +4,10 @@ data class Position(val sentenceId: Long, val chunkStartToken: Int)
 
 enum class Theme(val storage: String) { DARK("dark"), LIGHT("light") }
 
-data class Settings(val chunkWidth: Int, val theme: Theme)
+/** §17.2 reading modes; the unit highlighted and stepped through. */
+enum class Mode(val storage: String) { CHUNK("chunk"), SENTENCE("sentence"), PARAGRAPH("paragraph") }
+
+data class Settings(val chunkWidth: Int, val theme: Theme, val mode: Mode = Mode.CHUNK)
 
 sealed interface Action {
     data object Next : Action
@@ -16,10 +19,20 @@ sealed interface Action {
     data class GotoPercent(val percent: Double) : Action
     data class SetWidth(val width: Int) : Action
     data class SetTheme(val theme: Theme) : Action
+    data object PreviousSentence : Action
+    data object NextSentence : Action
+    data object PeekStart : Action
+    data object PeekEnd : Action
+    data class SetMode(val mode: Mode) : Action
 }
 
 sealed interface Effect {
-    data class Advance(val sentenceId: Long, val chunkWords: Int, val direction: Int) : Effect
+    data class Advance(
+        val sentenceId: Long,
+        val chunkWords: Int,
+        val direction: Int,
+        val kind: String = "step",
+    ) : Effect
     data class SaveSetting(val key: String, val value: String) : Effect
 }
 
@@ -29,6 +42,7 @@ class Chunks(
     val words: List<Int>,
     val wordsBefore: List<Int>,
     val blockIds: List<Long>,
+    val ends: List<Pair<Int, Int>> = emptyList(),
 ) {
     /** Half-open chunk range of the block containing chunk [index]. */
     fun blockRange(index: Int): IntRange {
@@ -40,7 +54,8 @@ class Chunks(
     }
 
     companion object {
-        fun build(book: BookContent, width: Int): Chunks {
+        fun build(book: BookContent, width: Int, mode: Mode = Mode.CHUNK): Chunks {
+            if (mode != Mode.CHUNK) TODO()
             val byId = book.sentences.associateBy { it.id }
             val spans = Chunker.assemble(book.sentences, width)
             val words = spans.map { span ->
@@ -60,6 +75,7 @@ data class ReaderState(
     val settings: Settings,
     val chunks: Chunks,
     val index: Int,
+    val peek: Boolean = false,
     val effects: List<Effect> = emptyList(),
 ) {
     val active: ChunkSpan get() = chunks.spans[index]
@@ -99,6 +115,9 @@ object Reader {
             Action.Last -> s.copy(index = last)
             is Action.GotoPercent -> goto(s, action.percent)
             is Action.SetWidth -> setWidth(s, action.width)
+            Action.PreviousSentence, Action.NextSentence, Action.PeekStart, Action.PeekEnd,
+            is Action.SetMode,
+            -> TODO()
             is Action.SetTheme -> s.copy(
                 settings = s.settings.copy(theme = action.theme),
                 effects = listOf(Effect.SaveSetting("theme", action.theme.storage)),
