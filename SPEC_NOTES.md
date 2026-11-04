@@ -53,3 +53,4 @@ Deviations and resolutions against `kert_spec.md`. One line per entry.
 - Task 31, test_roundtrip::test_resumes_inside_a_sentence_at_new_width, §17.7: reopening mid-book now starts on the recap, which consumes the first key; the test reopens at the same clock time and dismisses the recap before typing `:set width=8`. Asserted positions unchanged.
 - Task 32, test_state::long_book: RED-test bug, its `w0`…`w9` tokens are not words under the word predicate (alphabetic or numeric), so the book had 0 words; now ten alphabetic words per sentence.
 - Task 32, test_state::test_goal_again_rearms_from_the_current_place, §17.8: reaching the goal now offers the goal checkpoint; the test presses Esc to skip it before `:goal again`. Asserted behavior unchanged.
+- §8.3 amendment (2026-11-04, user-approved): POSIX key reading moved from readchar.readkey into keys.py with a 50 ms Esc timeout and no input flush; Windows unchanged.

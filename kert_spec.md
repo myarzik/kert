@@ -392,6 +392,20 @@ happen synchronously after each key. This is cross-platform (msvcrt on
 Windows under the hood) and avoids async machinery entirely. `Ctrl+C` must be
 caught and treated as quit-with-save.
 
+**Amendment (2026-11-04), POSIX key reading.** readchar 4.2.2 returns a lone
+`Esc` only together with the next key (`"\x1b" + c2`), so `Esc` cannot cancel
+or skip anything on macOS/Linux, and it switches modes with `TCSAFLUSH`,
+which drops typed-ahead input (pasted text). On POSIX `keys.py` therefore
+reads keys itself: the terminal stays in non-canonical, no-echo mode (`ISIG`
+kept, so Ctrl+C still raises `KeyboardInterrupt`; no input flush) for the
+whole key; after an `Esc` byte it waits up to **50 ms** for more bytes and
+returns them with it as one escape sequence (arrows, F-keys), else a lone
+`Esc`. Multi-byte UTF-8 is decoded to one character. A byte `\x03` also
+raises `KeyboardInterrupt`. Key strings match readchar's (`readchar.key`
+constants). The byte-to-key parsing is a pure function over a byte source
+with timeouts, unit-tested; the termios/select glue is the exempt thin layer.
+Windows keeps `readchar.readkey` (msvcrt reports `Esc` at once).
+
 ---
 
 ## 9. CLI Surface
