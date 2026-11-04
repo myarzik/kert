@@ -4,6 +4,7 @@ Each key resolves independently; an invalid value at one layer falls through
 to the next (SPEC_NOTES, Task 8). The TOML stores preferences only.
 """
 
+import re
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from kert.common.errors import KertError
 THEMES = ("dark", "light")
 MODES = ("chunk", "sentence", "paragraph")
 WIDTH_MIN, WIDTH_MAX = 5, 12
+GOAL_MAX = {"m": 600, "w": 100_000}  # §17.6: minutes / words
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +58,15 @@ def _valid_theme(value: object) -> str | None:
     return value if value in THEMES else None
 
 
+def parse_goal(raw: object) -> tuple[int, str] | None:
+    """`"15m"` -> (15, "m"); None unless N is in 1..GOAL_MAX for its unit."""
+    match = re.fullmatch(r"(\d+)([mw])", raw) if isinstance(raw, str) else None
+    if match is None:
+        return None
+    amount, unit = int(match[1]), match[2]
+    return (amount, unit) if 1 <= amount <= GOAL_MAX[unit] else None
+
+
 def _valid_mode(value: object) -> str | None:
     return value if value in MODES else None
 
@@ -69,9 +80,11 @@ def load_global(path: Path | None = None) -> Settings:
         return HARDCODED
     width = _valid_width(data.get("chunk_width"))
     theme = _valid_theme(data.get("theme"))
+    goal = data.get("default_goal")
     return Settings(
         chunk_width=HARDCODED.chunk_width if width is None else width,
         theme=theme or HARDCODED.theme,
+        default_goal=goal if parse_goal(goal) else None,
     )
 
 
@@ -91,6 +104,7 @@ def resolve(book: SettingsStore, defaults: Settings) -> Settings:
         chunk_width=defaults.chunk_width if width is None else width,
         theme=theme or defaults.theme,
         mode=mode or HARDCODED.mode,  # §17.2: never from the TOML
+        default_goal=defaults.default_goal,
     )
 
 
@@ -129,6 +143,9 @@ def set_setting(
     theme = value if key == "theme" else current.theme
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f'chunk_width = {width}\ntheme = "{theme}"\n', encoding="utf-8")
+        text = f'chunk_width = {width}\ntheme = "{theme}"\n'
+        if current.default_goal:
+            text += f'default_goal = "{current.default_goal}"\n'
+        path.write_text(text, encoding="utf-8")
     except OSError:
         pass  # never crash on config errors (§8.4); the book layer is saved

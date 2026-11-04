@@ -11,6 +11,7 @@ import msgpack
 from kert.common.dbschema import SCHEMA_VERSION, upgrade_state_tables
 from kert.common.errors import KertError
 from kert.common.model import Block, Sentence, SplitCandidate
+from kert.reader.tempo import LogRow
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,8 +129,14 @@ class BookStore:
                 (ts, sentence_id, chunk_words, direction, kind, mode),
             )
 
-    def recent_advances(self, limit: int):
-        raise NotImplementedError
+    def recent_advances(self, limit: int) -> tuple[LogRow, ...]:
+        """The newest `limit` advance_log rows, oldest first."""
+        rows = self._conn.execute(
+            "SELECT ts, chunk_words, direction, kind, mode FROM advance_log "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return tuple(LogRow(*row) for row in reversed(rows))
 
     def trim_advance_log(self, keep: int) -> None:
         """Delete all but the `keep` newest advance_log rows."""

@@ -1,11 +1,18 @@
 """Pure frame builder: `build_frame(state) -> renderable` (spec §7, §13.1)."""
 
+import math
 from dataclasses import replace
 
 from rich.console import Console, Group, RenderableType
 from rich.text import Text
 
-from kert.reader.state import ReaderState, block_range
+from kert.reader.state import (
+    ReaderState,
+    block_range,
+    goal_seconds_left,
+    goal_words_left,
+)
+from kert.reader.tempo import tempo_wps
 from kert.reader.theme import THEMES, Theme
 
 MAX_TEXT_WIDTH = 88
@@ -114,8 +121,26 @@ def _tape_below(
 
 def _status(state: ReaderState, width: int, theme: Theme) -> Text:
     left = f":{state.command}" if state.command is not None else state.message or ""
-    right = f"{state.percent:.1f}%"
+    right = _goal_segment(state) + f"{state.percent:.1f}%"
     left = left[: max(0, width - len(right) - 1)]
     return Text(
         left + " " * (width - len(left) - len(right)) + right, style=theme.status
     )
+
+
+def _goal_segment(state: ReaderState) -> str:
+    """`▸ 640 w · ~4 min` / `▸ 6 min · ~1100 w` before the percent (§17.6)."""
+    if state.goal is None:
+        return ""
+    wps = tempo_wps(state.log, state.settings.mode)
+    if state.goal.unit == "w":
+        words = goal_words_left(state)
+        segment = f"▸ {words} w"
+        if wps:
+            segment += f" · ~{max(1, math.ceil(words / wps / 60))} min"
+    else:
+        seconds = goal_seconds_left(state)
+        segment = f"▸ {math.ceil(seconds / 60)} min"
+        if wps:
+            segment += f" · ~{round(seconds * wps, -1):.0f} w"
+    return segment + "   "

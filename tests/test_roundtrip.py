@@ -104,12 +104,13 @@ def test_full_session_roundtrip(book_path, toml):
     # Words of the chunk left (§3): Глава 1=2, Он вышел из дома ,=4,
     # хотя шёл дождь .=3, На улице было пусто .=4, — Привет , —=1.
     assert advance_rows(book_path) == [
-        (100.0, 1, 2, 1, "step", "chunk"),
-        (101.0, 2, 4, 1, "step", "chunk"),
-        (102.0, 2, 3, 1, "step", "chunk"),
-        (103.0, 3, 4, 1, "step", "chunk"),
-        (104.0, 4, 1, -1, "step", "chunk"),
-        (105.0, 3, 4, 1, "step", "chunk"),
+        # The clock ticks once per key (§17.6): ":set width=6" + Enter = 100..112.
+        (113.0, 1, 2, 1, "step", "chunk"),
+        (114.0, 2, 4, 1, "step", "chunk"),
+        (115.0, 2, 3, 1, "step", "chunk"),
+        (116.0, 3, 4, 1, "step", "chunk"),
+        (117.0, 4, 1, -1, "step", "chunk"),
+        (118.0, 3, 4, 1, "step", "chunk"),
     ]
     assert content_digest(book_path) == before
     assert sorted(p.name for p in book_path.parent.iterdir()) == ["book.kert"]

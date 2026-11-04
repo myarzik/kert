@@ -16,6 +16,7 @@ from kert.common.errors import KertError
 from kert.reader import config, keys
 from kert.reader.render import build_frame
 from kert.reader.state import (
+    LOG_KEEP,
     Advance,
     Book,
     ReaderState,
@@ -29,7 +30,10 @@ ADVANCE_LOG_CAP = 10_000
 
 
 def open_session(
-    path: Path, size: tuple[int, int] = (80, 24), config_file: Path | None = None
+    path: Path,
+    size: tuple[int, int] = (80, 24),
+    config_file: Path | None = None,
+    now: Callable[[], float] = time.time,
 ) -> tuple[BookStore, ReaderState]:
     store = BookStore.open(path)
     try:
@@ -43,7 +47,14 @@ def open_session(
             ) from None
         book = Book(store.blocks, store.sentences, word_count)
         settings = config.resolve(store, config.load_global(config_file))
-        state = initial_state(book, settings, store.load_position(), size=size)
+        state = initial_state(
+            book,
+            settings,
+            store.load_position(),
+            size=size,
+            now=now(),
+            log=store.recent_advances(LOG_KEEP),
+        )
     except BaseException:
         store.close()
         raise
@@ -59,12 +70,12 @@ def feed(
     now: Callable[[], float] = time.time,
 ) -> ReaderState:
     """Apply one key and execute the effects it produced."""
-    state = handle_key(state, key)
+    state = handle_key(replace(state, now=now()), key)
     for effect in state.effects:
         match effect:
             case Advance(sentence_id=sid, chunk_words=words, direction=d, kind=k):
                 store.log_advance(
-                    now(), sid, words, d, kind=k, mode=state.settings.mode
+                    state.now, sid, words, d, kind=k, mode=state.settings.mode
                 )
             case SaveSetting(key=name, value=value):
                 config.set_setting(store, name, value, config_file)

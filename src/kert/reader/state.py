@@ -12,14 +12,22 @@ from kert.common.errors import KertError
 from kert.common.model import Block, ChunkSpan, Sentence
 from kert.common.text import is_word
 from kert.reader.chunker import assemble
-from kert.reader.commands import GotoCommand, QuitCommand, SetCommand, parse_command
-from kert.reader.config import Settings
+from kert.reader.commands import (
+    GoalCommand,
+    GotoCommand,
+    QuitCommand,
+    SetCommand,
+    parse_command,
+)
+from kert.reader.config import Settings, parse_goal
 from kert.reader.store import Position
-from kert.reader.tempo import LogRow
+from kert.reader.tempo import LogRow, active_seconds
 
 _NEXT = {" ", "j", keys.RIGHT}
 _PREVIOUS = {"b", "k", keys.LEFT}
 _ENTER = {keys.ENTER, keys.CR, keys.LF}
+LOG_KEEP = 1000  # recent advance_log rows held for tempo (§17.6)
+GOAL_REACHED = "goal reached — :goal again"
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +162,16 @@ def _resolve(book: Book, chunks: Chunks, sentence_id: int, token: int) -> int:
 
 
 @dataclass(frozen=True, slots=True)
+class Goal:
+    """A session goal (§17.6): `amount` minutes ("m") or words ("w")."""
+
+    amount: int
+    unit: str
+    armed_at: float  # clock when armed; active time counts after it
+    start_words: int  # words before the active unit when armed
+
+
+@dataclass(frozen=True, slots=True)
 class ReaderState:
     book: Book
     settings: Settings
@@ -165,7 +183,8 @@ class ReaderState:
     peek: bool = False  # §17.3, transient
     now: float = 0.0  # clock at the current key, set by the app loop
     log: tuple[LogRow, ...] = ()  # recent advance_log rows (§17.6)
-    goal: object | None = None
+    goal: Goal | None = None
+    last_goal: tuple[int, str] | None = None  # for `:goal again`
     message: str | None = None
     effects: tuple[Effect, ...] = ()
     quit: bool = False
@@ -196,11 +215,54 @@ def initial_state(
 ) -> ReaderState:
     chunks = build_chunks(book, settings.chunk_width, settings.mode)
     index = _resolve(book, chunks, position.sentence_id, position.chunk_start_token)
-    return ReaderState(book, settings, chunks, index, size=size)
+    state = ReaderState(book, settings, chunks, index, size=size, now=now, log=log)
+    default = parse_goal(settings.default_goal)
+    return _arm(state, *default) if default else state
+
+
+def goal_words_left(state: ReaderState) -> int:
+    goal = state.goal
+    assert goal is not None and goal.unit == "w"
+    read = state.chunks.words_before[state.index] - goal.start_words
+    return max(0, goal.amount - read)
+
+
+def goal_seconds_left(state: ReaderState) -> float:
+    goal = state.goal
+    assert goal is not None and goal.unit == "m"
+    active = active_seconds(state.log, state.settings.mode, goal.armed_at)
+    return max(0.0, goal.amount * 60 - active)
 
 
 def handle_key(state: ReaderState, key: str) -> ReaderState:
-    state = replace(state, message=None, effects=())
+    state = _dispatch(replace(state, message=None, effects=()), key)
+    rows = tuple(
+        LogRow(state.now, e.chunk_words, e.direction, e.kind, state.settings.mode)
+        for e in state.effects
+        if isinstance(e, Advance)
+    )
+    if rows:
+        state = replace(state, log=(state.log + rows)[-LOG_KEEP:])
+    return _check_goal(state)
+
+
+def _check_goal(state: ReaderState) -> ReaderState:
+    goal = state.goal
+    if goal is None:
+        return state
+    left = goal_words_left(state) if goal.unit == "w" else goal_seconds_left(state)
+    if left > 0:
+        return state
+    # No automatic re-arming: the reward resets motivation (§17.6).
+    return replace(state, goal=None, message=GOAL_REACHED)
+
+
+def _arm(state: ReaderState, amount: int, unit: str) -> ReaderState:
+    goal = Goal(amount, unit, state.now, state.chunks.words_before[state.index])
+    return replace(state, goal=goal, last_goal=(amount, unit))
+
+
+def _dispatch(state: ReaderState, key: str) -> ReaderState:
     if state.peek:
         return replace(state, peek=False)  # §17.3: the key that ends peek is consumed
     if state.command is not None:
@@ -331,6 +393,15 @@ def _run_command(state: ReaderState, line: str) -> ReaderState:
             return _goto(state, percent)
         case SetCommand(key=key, value=value):
             return _set(state, key, value)
+        case GoalCommand(action="off"):
+            return replace(state, goal=None, message="goal off")
+        case GoalCommand(action="again"):
+            if state.last_goal is None:
+                return replace(state, message="no goal to re-arm")
+            amount, unit = state.last_goal
+            return replace(_arm(state, amount, unit), message=f"goal {amount}{unit}")
+        case GoalCommand(amount=amount, unit=unit):
+            return replace(_arm(state, amount, unit), message=f"goal {amount}{unit}")
 
 
 def _goto(state: ReaderState, percent: float) -> ReaderState:

@@ -23,7 +23,14 @@ class QuitCommand:
     pass
 
 
-Command = SetCommand | GotoCommand | QuitCommand
+@dataclass(frozen=True, slots=True)
+class GoalCommand:
+    action: str  # "arm", "off" or "again"
+    amount: int = 0
+    unit: str = ""  # "m" minutes, "w" words
+
+
+Command = SetCommand | GotoCommand | QuitCommand | GoalCommand
 
 _SET_KEYS = {"width": "chunk_width", "theme": "theme", "mode": "mode"}
 
@@ -37,6 +44,8 @@ def parse_command(text: str) -> Command:
         return _parse_set(arg)
     if name == "goto":
         return _parse_goto(arg)
+    if name == "goal":
+        return _parse_goal(arg)
     raise KertError(f"Unknown command: {text.strip()}")
 
 
@@ -60,3 +69,12 @@ def _parse_goto(arg: str) -> GotoCommand:
     if not (math.isfinite(percent) and 0.0 <= percent <= 100.0):
         raise KertError("Usage: :goto P (percent 0-100)")
     return GotoCommand(percent)
+
+
+def _parse_goal(arg: str) -> GoalCommand:
+    if arg in ("off", "again"):
+        return GoalCommand(arg)
+    goal = config.parse_goal(arg)
+    if goal is None:
+        raise KertError("Usage: :goal Nm | Nw | off | again (1-600 m, 1-100000 w)")
+    return GoalCommand("arm", *goal)
