@@ -32,13 +32,14 @@ class ReadingSession private constructor(
 
     /** Apply one action and execute the effects it produced. */
     fun dispatch(action: Action): ReaderState {
-        state = Reader.reduce(state, action)
+        val now = clock()
+        state = Reader.reduce(state.copy(now = now), action)
         for (effect in state.effects) {
             when (effect) {
                 is Effect.Advance -> db.execute(
                     "INSERT INTO advance_log (ts, sentence_id, chunk_words, direction, kind, mode) " +
                         "VALUES (?, ?, ?, ?, ?, ?)",
-                    clock(), effect.sentenceId, effect.chunkWords, effect.direction,
+                    now, effect.sentenceId, effect.chunkWords, effect.direction,
                     effect.kind, state.settings.mode.storage,
                 )
                 is Effect.SaveSetting -> {
@@ -92,7 +93,8 @@ class ReadingSession private constructor(
                 val position = loadState(db, "position")?.let { raw ->
                     POSITION.find(raw)?.destructured?.let { (sid, token) -> Position(sid.toLong(), token.toInt()) }
                 } ?: Position(book.sentences.firstOrNull()?.id ?: 0, 0)
-                ReadingSession(db, defaults, clock, Reader.initial(book, settings, position))
+                val initial = Reader.initial(book, settings, position).copy(log = recentAdvances(db))
+                ReadingSession(db, defaults, clock, initial)
             } catch (e: Exception) {
                 db.close()
                 throw e
@@ -110,6 +112,18 @@ class ReadingSession private constructor(
             val mode = loadState(db, "mode")?.let { v -> Mode.entries.find { it.storage == v } } ?: Mode.CHUNK
             return Settings(width, theme, mode)
         }
+
+        /** The newest advance_log rows, oldest first (§17.6). */
+        private fun recentAdvances(db: SqlConnection): List<LogRow> =
+            db.query(
+                "SELECT ts, chunk_words, direction, kind, mode FROM advance_log ORDER BY id DESC LIMIT ?",
+                Reader.LOG_KEEP,
+            ).map { r ->
+                LogRow(
+                    (r[0] as Number).toDouble(), (r[1] as Number).toInt(), (r[2] as Number).toInt(),
+                    r[3] as String, r[4] as String,
+                )
+            }.reversed()
 
         internal fun loadState(db: SqlConnection, key: String): String? =
             db.query("SELECT value FROM reader_state WHERE key = ?", key).firstOrNull()?.get(0) as String?
