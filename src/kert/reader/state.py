@@ -51,7 +51,20 @@ class SaveSetting:
     value: str
 
 
-Effect = Advance | SaveSetting
+@dataclass(frozen=True, slots=True)
+class Checkpoint:
+    """A checkpoints row (§17.8) for the app to write."""
+
+    trigger: str
+    mode: str
+    span_start_sentence: int
+    span_end_sentence: int
+    span_words: int
+    recall_text: str | None
+    self_rating: int | None
+
+
+Effect = Advance | SaveSetting | Checkpoint
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +198,7 @@ class ReaderState:
     log: tuple[LogRow, ...] = ()  # recent advance_log rows (§17.6)
     goal: Goal | None = None
     last_goal: tuple[int, str] | None = None  # for `:goal again`
+    overlay: str | None = None
     message: str | None = None
     effects: tuple[Effect, ...] = ()
     quit: bool = False
@@ -218,6 +232,10 @@ def initial_state(
     state = ReaderState(book, settings, chunks, index, size=size, now=now, log=log)
     default = parse_goal(settings.default_goal)
     return _arm(state, *default) if default else state
+
+
+def recap_start(state: ReaderState) -> int | None:
+    raise NotImplementedError
 
 
 def goal_words_left(state: ReaderState) -> int:

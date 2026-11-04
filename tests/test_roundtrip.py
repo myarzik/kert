@@ -233,5 +233,31 @@ def test_session_keeps_the_log_and_the_clock(book_path, toml):
         store.close()
 
 
+def checkpoint_rows(path):
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute(
+            "SELECT ts, trigger, mode, span_start_sentence, span_end_sentence, "
+            "span_words, recall_text, self_rating FROM checkpoints ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def test_reopening_after_a_long_gap_records_the_recall_rating(book_path, toml):
+    store, state = open_session(book_path, config_file=toml, now=lambda: 10.0)
+    state = type_keys(store, state, ["J", "J"], toml, lambda: 10.0)  # S4 "— Привет"
+    close_session(store, state)
+
+    later = 10.0 + 3600.0
+    store, state = open_session(book_path, config_file=toml, now=lambda: later)
+    assert state.overlay == "recall"
+    state = type_keys(store, state, ["x", "p", "x"], toml, lambda: later)
+    assert state.overlay is None
+    close_session(store, state)
+
+    assert checkpoint_rows(book_path) == [(later, "open", "chunk", 4, 4, 0, None, 1)]
+
+
 def test_cli_read_missing_book_is_user_error(tmp_path):
     assert main(["read", str(tmp_path / "missing.kert")]) == 1

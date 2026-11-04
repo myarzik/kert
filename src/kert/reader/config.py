@@ -28,6 +28,10 @@ class Settings:
     theme: str
     mode: str = "chunk"  # §17.2: per book only, never in the TOML
     default_goal: str | None = None  # §17.6: TOML only
+    recap: bool = True  # §17.7
+    recap_words: int = 40
+    recall: bool = True
+    recall_gap_minutes: int = 60
 
 
 HARDCODED = Settings(chunk_width=8, theme="dark")

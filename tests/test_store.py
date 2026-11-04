@@ -277,3 +277,26 @@ def test_recent_advances_are_the_newest_rows_oldest_first(book_path):
             LogRow(4.0, 4, 1, "step", "chunk"),
             LogRow(9.0, 3, 0, "peek", "chunk"),
         )
+
+
+@spacy
+def test_add_checkpoint_writes_a_row(book_path):
+    with BookStore.open(book_path) as s:
+        s.add_checkpoint(
+            ts=5.0,
+            trigger="quit",
+            mode="sentence",
+            span_start_sentence=1,
+            span_end_sentence=3,
+            span_words=12,
+            recall_text="Он вышел под дождь",
+            self_rating=1,
+        )
+
+    conn = sqlite3.connect(book_path)
+    try:
+        assert conn.execute("SELECT * FROM checkpoints").fetchall() == [
+            (1, 5.0, "quit", "sentence", 1, 3, 12, "Он вышел под дождь", 1)
+        ]
+    finally:
+        conn.close()

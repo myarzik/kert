@@ -521,3 +521,55 @@ def test_goal_segment_updates_while_reading():
     state = handle_key(goal_state("goal 20w"), "j")  # 2 words read
 
     assert lines(state)[-1] == status("▸ 18 w   9.1%")
+
+
+# --- R3/R4 re-entry frames (§17.7) ----------------------------------------------------
+
+
+def reopened_at(position, gap, settings=DARK):
+    from kert.reader.tempo import LogRow
+
+    log = (LogRow(1000.0, 2, 1, "step", "chunk"),)
+    return initial_state(
+        mini_book(), settings, position, size=(44, 12), now=1000.0 + gap, log=log
+    )
+
+
+def test_recall_prompt_clears_the_pane():
+    frame = lines(reopened_at(Position(4, 0), 3600.0))
+
+    assert frame[:-1] == [""] * 11
+    assert frame[-1] == status("59.1%", left="recall: what was happening? — any key")
+
+
+def test_rating_prompt():
+    state = handle_key(reopened_at(Position(4, 0), 3600.0), "x")
+
+    assert lines(state)[-1] == status(
+        "59.1%", left="y recalled / p partial / n blank / Esc skip"
+    )
+
+
+def test_recap_frame_ends_just_above_the_center_row():
+    # recap_words=10 before S4: chunks 1-3, all of block 2 (two lines). H = 11,
+    # the center row is (11 - 1) // 2 = 5, so the recap fills rows 3-4.
+    settings = Settings(chunk_width=5, theme="dark", recap_words=10)
+    state = reopened_at(Position(4, 0), 60.0, settings)
+
+    frame = lines(state)
+    assert frame[:-1] == ["", "", "", "  " + B2[0], "  " + B2[1]] + [""] * 6
+    assert frame[-1] == status("59.1%", left="recap — any key")
+    assert style_of(state, "Short one.") == ("grey50", False)
+
+
+def test_recap_across_blocks_separates_them_with_a_blank_line():
+    settings = Settings(chunk_width=5, theme="dark", recap_words=12)
+    state = reopened_at(Position(4, 0), 60.0, settings)
+
+    assert lines(state)[:5] == ["", "  " + B1, "", "  " + B2[0], "  " + B2[1]]
+
+
+def test_dismissing_the_recap_shows_the_reading_frame():
+    state = reopened_at(Position(4, 0), 60.0)
+
+    assert lines(handle_key(state, "x")) == lines(state_at(Position(4, 0), (44, 12)))

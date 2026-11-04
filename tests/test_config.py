@@ -331,3 +331,70 @@ def test_set_keeps_the_default_goal_in_the_toml(toml):
 
     assert load_global(toml).default_goal == "15m"
     assert load_global(toml).theme == "light"
+
+
+# --- §17.10 recap and recall settings -------------------------------------------------
+
+
+def test_recap_and_recall_defaults():
+    assert (HARDCODED.recap, HARDCODED.recap_words) == (True, 40)
+    assert (HARDCODED.recall, HARDCODED.recall_gap_minutes) == (True, 60)
+
+
+def test_recap_and_recall_come_from_the_toml(toml):
+    write(
+        toml,
+        'recap = "off"\nrecap_words = 80\nrecall = "off"\nrecall_gap_minutes = 30\n',
+    )
+
+    settings = load_global(toml)
+    assert (settings.recap, settings.recap_words) == (False, 80)
+    assert (settings.recall, settings.recall_gap_minutes) == (False, 30)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ['recap = "no"', "recap_words = 9", "recap_words = 121", "recall = true",
+     "recall_gap_minutes = 4", "recall_gap_minutes = 1441"],
+)  # fmt: skip
+def test_invalid_recap_and_recall_values_fall_back_alone(toml, text):
+    write(toml, text + "\n")
+
+    assert load_global(toml) == HARDCODED
+
+
+def test_book_recap_settings_override_the_toml(toml):
+    write(toml, "recap_words = 80\n")
+    book = FakeBook(recap="off", recap_words="20", recall_gap_minutes="5")
+
+    settings = resolve(book, load_global(toml))
+    assert (settings.recap, settings.recap_words) == (False, 20)
+    assert settings.recall_gap_minutes == 5
+
+
+def test_set_writes_recap_settings_to_both_layers(toml):
+    book = FakeBook()
+
+    set_setting(book, "recap_words", "60", toml)
+    set_setting(book, "recall", "off", toml)
+
+    assert book.state == {"recap_words": "60", "recall": "off"}
+    with toml.open("rb") as f:
+        data = tomllib.load(f)
+    assert data["recap_words"] == 60
+    assert data["recall"] == "off"
+    assert data["recap"] == "on"
+
+
+@pytest.mark.parametrize(
+    ("key", "raw"),
+    [
+        ("recap", "yes"),
+        ("recap_words", "x"),
+        ("recall", ""),
+        ("recall_gap_minutes", "0"),
+    ],
+)
+def test_validate_rejects_bad_recap_values(key, raw):
+    with pytest.raises(KertError):
+        config.validate(key, raw)

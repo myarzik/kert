@@ -7,9 +7,11 @@ from kert.reader.config import Settings
 from kert.reader.state import (
     Advance,
     Book,
+    Checkpoint,
     SaveSetting,
     handle_key,
     initial_state,
+    recap_start,
 )
 from kert.reader.store import Position
 from kert.reader.tempo import LogRow
@@ -659,3 +661,117 @@ def test_default_goal_is_armed_at_start():
 
     assert state.goal is not None
     assert press(state, "j", "j").message == REACHED
+
+
+# --- R3/R4 re-entry: recall prompt, rating, recap (§17.7) ---------------------------
+
+HOUR = 3600.0
+
+
+def reopened(index, gap, settings=W5, log_rows=1):
+    """State on chunk `index` opened `gap` seconds after the last logged move."""
+    book = mini_book()
+    starts = [(1, 0), (2, 0), (2, 5), (3, 0), (4, 0), (4, 5)]
+    log = tuple(LogRow(1000.0 - i, 2, 1, "step", "chunk") for i in range(log_rows))
+    return initial_state(
+        book, settings, Position(*starts[index]), now=1000.0 + gap, log=log
+    )
+
+
+def open_checkpoint(rating, sentence_id=4):
+    return Checkpoint(
+        trigger="open",
+        mode="chunk",
+        span_start_sentence=sentence_id,
+        span_end_sentence=sentence_id,
+        span_words=0,
+        recall_text=None,
+        self_rating=rating,
+    )
+
+
+def test_long_gap_starts_with_the_recall_prompt():
+    assert reopened(4, HOUR).overlay == "recall"
+
+
+def test_recall_then_rating_then_recap():
+    state = press(reopened(4, HOUR), "x")
+    assert state.overlay == "rating"
+
+    state = press(state, "y")
+    assert state.effects == (open_checkpoint(2),)
+    assert state.overlay == "recap"
+
+    state = press(state, "j")
+    assert state.overlay is None
+    assert state.index == 4  # the key that dismisses the recap is consumed
+    assert state.effects == ()
+
+
+@pytest.mark.parametrize(("k", "rating"), [("p", 1), ("n", 0), (key.ESC, None)])
+def test_rating_keys(k, rating):
+    assert press(reopened(4, HOUR), "x", k).effects == (open_checkpoint(rating),)
+
+
+def test_other_keys_keep_the_rating_prompt():
+    state = press(reopened(4, HOUR), "x", "j", "q")
+
+    assert state.overlay == "rating"
+    assert state.index == 4
+    assert state.quit is False
+    assert state.effects == ()
+
+
+def test_short_gap_goes_straight_to_the_recap():
+    assert reopened(4, HOUR - 1).overlay == "recap"
+
+
+def test_empty_log_has_no_gap_and_no_recall_prompt():
+    assert reopened(4, HOUR, log_rows=0).overlay == "recap"
+
+
+def test_book_start_has_no_recall_and_no_recap():
+    assert reopened(0, HOUR).overlay is None
+
+
+def test_recap_off_after_a_short_gap_reads_directly():
+    settings = Settings(chunk_width=5, theme="dark", recap=False)
+
+    assert reopened(4, 60.0, settings).overlay is None
+
+
+def test_recall_off_skips_the_prompt():
+    settings = Settings(chunk_width=5, theme="dark", recall=False)
+
+    assert reopened(4, HOUR, settings).overlay == "recap"
+
+
+def test_recall_without_recap_ends_in_reading():
+    settings = Settings(chunk_width=5, theme="dark", recap=False)
+
+    assert press(reopened(4, HOUR, settings), "x", "y").overlay is None
+
+
+def test_recall_gap_is_a_setting():
+    settings = Settings(chunk_width=5, theme="dark", recall_gap_minutes=5)
+
+    assert reopened(4, 301.0, settings).overlay == "recall"
+    assert reopened(4, 299.0, settings).overlay == "recap"
+
+
+@pytest.mark.parametrize(
+    ("index", "words", "start"),
+    [
+        (4, 10, 1),  # back 2 + 4 + 5 = 11 >= 10 words, across the block boundary
+        (4, 1, 3),  # at least one whole unit
+        (2, 40, 0),  # the book start bounds it
+    ],
+)
+def test_recap_takes_whole_units_back_to_the_word_budget(index, words, start):
+    settings = Settings(chunk_width=5, theme="dark", recap_words=words)
+
+    assert recap_start(reopened(index, 0.0, settings)) == start
+
+
+def test_no_recap_at_the_book_start():
+    assert recap_start(reopened(0, 0.0)) is None

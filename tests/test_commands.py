@@ -47,3 +47,16 @@ def test_parse_valid_commands(text, command):
 def test_parse_invalid_commands_raise_user_error(text):
     with pytest.raises(KertError):
         parse_command(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "key", "value"),
+    [
+        ("set recap=off", "recap", "off"),
+        ("set recap_words=60", "recap_words", "60"),
+        ("set recall=on", "recall", "on"),
+        ("set recall_gap_minutes=30", "recall_gap_minutes", "30"),
+    ],
+)
+def test_set_recap_and_recall(text, key, value):
+    assert parse_command(text) == SetCommand(key, value)
