@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
+import readchar
 from rich.console import Console
 from rich.live import Live
 
@@ -123,7 +124,10 @@ def run(
             build_frame(state), console=console, screen=True, auto_refresh=False
         ) as live:
             while not state.quit:
-                key = read_key()
+                try:
+                    key = read_key()
+                except KeyboardInterrupt:  # §17.8: Ctrl+C is a key for the state
+                    key = readchar.key.CTRL_C
                 state = feed(
                     store, replace(state, size=size()), key, config_file=config_file
                 )

@@ -28,6 +28,8 @@ _PREVIOUS = {"b", "k", keys.LEFT}
 _ENTER = {keys.ENTER, keys.CR, keys.LF}
 LOG_KEEP = 1000  # recent advance_log rows held for tempo (§17.6)
 GOAL_REACHED = "goal reached — :goal again"
+CHECKPOINT_MIN_WORDS = 500  # §17.8 quit trigger
+_BACKSPACES = {"\x7f", "\x08"}  # POSIX and Windows (§17.8)
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,7 +200,11 @@ class ReaderState:
     log: tuple[LogRow, ...] = ()  # recent advance_log rows (§17.6)
     goal: Goal | None = None
     last_goal: tuple[int, str] | None = None  # for `:goal again`
-    overlay: str | None = None
+    overlay: str | None = None  # recall, line, rating or recap (§17.7, §17.8)
+    pending: str | None = None  # trigger of the checkpoint being taken
+    line: str = ""  # recall text typed on the `line` overlay
+    session_words: int = 0  # words before the unit where the session started
+    span_from: tuple[int, int] = (0, 0)  # (sentence_id, words before) of the span
     message: str | None = None
     effects: tuple[Effect, ...] = ()
     quit: bool = False
@@ -229,14 +235,28 @@ def initial_state(
 ) -> ReaderState:
     chunks = build_chunks(book, settings.chunk_width, settings.mode)
     index = _resolve(book, chunks, position.sentence_id, position.chunk_start_token)
-    state = ReaderState(book, settings, chunks, index, size=size, now=now, log=log)
+    words = chunks.words_before[index]
+    state = ReaderState(
+        book,
+        settings,
+        chunks,
+        index,
+        size=size,
+        now=now,
+        log=log,
+        session_words=words,
+        span_from=(chunks.spans[index].sentence_id, words),
+    )
     default = parse_goal(settings.default_goal)
     return _arm(state, *default) if default else state
 
 
 def start_session(state: ReaderState) -> ReaderState:
     """Open a reading session: the re-entry flow of §17.7, if any."""
-    return replace(state, overlay=_entry_overlay(state))
+    overlay = _entry_overlay(state)
+    return replace(
+        state, overlay=overlay, pending="open" if overlay == "recall" else None
+    )
 
 
 def recap_start(state: ReaderState) -> int | None:
@@ -295,7 +315,20 @@ def _check_goal(state: ReaderState) -> ReaderState:
     if left > 0:
         return state
     # No automatic re-arming: the reward resets motivation (§17.6).
-    return replace(state, goal=None, message=GOAL_REACHED)
+    state = replace(state, goal=None, message=GOAL_REACHED)
+    return _offer_checkpoint(state, "goal") if state.settings.recall else state
+
+
+def _offer_checkpoint(state: ReaderState, trigger: str) -> ReaderState:
+    return replace(state, overlay="line", pending=trigger, line="")
+
+
+def _quit(state: ReaderState) -> ReaderState:
+    """Quit, offering the checkpoint after a long enough session (§17.8)."""
+    read = state.chunks.words_before[state.index] - state.session_words
+    if state.settings.recall and read >= CHECKPOINT_MIN_WORDS:
+        return _offer_checkpoint(state, "quit")
+    return replace(state, quit=True)
 
 
 def _arm(state: ReaderState, amount: int, unit: str) -> ReaderState:
@@ -306,29 +339,70 @@ def _arm(state: ReaderState, amount: int, unit: str) -> ReaderState:
 _RATINGS = {"y": 2, "p": 1, "n": 0, keys.ESC: None}
 
 
+def _edit(line: str, key: str) -> str:
+    """One key of line editing: a printable key or pasted burst, or Backspace."""
+    if key in _BACKSPACES:
+        return line[:-1]
+    return line + key if key.isprintable() else line
+
+
 def _overlay_key(state: ReaderState, key: str) -> ReaderState:
-    """Keys on the re-entry screens (§17.7); every key here is consumed."""
+    """Keys on the re-entry and checkpoint screens; every key here is consumed."""
     if state.overlay == "recall":
         return replace(state, overlay="rating")
+    if state.overlay == "line":
+        if key in _ENTER:
+            return replace(state, overlay="rating")
+        if key == keys.ESC:
+            return _finish_checkpoint(state, None)  # skips the whole checkpoint
+        return replace(state, line=_edit(state.line, key))
     if state.overlay == "rating":
         if key not in _RATINGS:
             return state
-        sentence_id = state.active.sentence_id
-        row = Checkpoint(
-            trigger="open",
-            mode=state.settings.mode,
-            span_start_sentence=sentence_id,
-            span_end_sentence=sentence_id,
-            span_words=0,
-            recall_text=None,
-            self_rating=_RATINGS[key],
-        )
-        after = "recap" if state.settings.recap else None
-        return replace(state, overlay=after, effects=(row,))
+        return _finish_checkpoint(state, _checkpoint_row(state, _RATINGS[key]))
     return replace(state, overlay=None)  # recap: any key starts reading
 
 
+def _checkpoint_row(state: ReaderState, rating: int | None) -> Checkpoint:
+    sentence_id = state.active.sentence_id
+    if state.pending == "open":  # a mental recall of the previous session
+        start, words, text = sentence_id, 0, None
+    else:
+        start = state.span_from[0]
+        words = max(0, state.chunks.words_before[state.index] - state.span_from[1])
+        text = state.line.strip() or None
+    return Checkpoint(
+        trigger=state.pending or "",
+        mode=state.settings.mode,
+        span_start_sentence=start,
+        span_end_sentence=sentence_id,
+        span_words=words,
+        recall_text=text,
+        self_rating=rating,
+    )
+
+
+def _finish_checkpoint(state: ReaderState, row: Checkpoint | None) -> ReaderState:
+    trigger = state.pending
+    state = replace(
+        state, overlay=None, pending=None, line="", effects=(row,) if row else ()
+    )
+    if trigger == "open":
+        return replace(state, overlay="recap" if state.settings.recap else None)
+    if trigger == "quit":
+        return replace(state, quit=True)
+    if row is None:
+        return state
+    words = state.chunks.words_before[state.index]
+    return replace(state, span_from=(state.active.sentence_id, words))
+
+
 def _dispatch(state: ReaderState, key: str) -> ReaderState:
+    if key == keys.CTRL_C:
+        if state.pending == "quit":
+            return replace(state, quit=True)  # a second Ctrl+C skips the checkpoint
+        cleared = replace(state, overlay=None, pending=None, command=None, peek=False)
+        return _quit(cleared)
     if state.overlay is not None:
         return _overlay_key(state, key)
     if state.peek:
@@ -360,7 +434,7 @@ def _dispatch(state: ReaderState, key: str) -> ReaderState:
     if key == ":":
         return replace(state, command="")
     if key == "q":
-        return replace(state, quit=True)
+        return _quit(state)
     return state
 
 
@@ -440,11 +514,9 @@ def _command_key(state: ReaderState, key: str) -> ReaderState:
         return _run_command(replace(state, command=None), line)
     if key == keys.ESC:
         return replace(state, command=None)
-    if key == keys.BACKSPACE:
-        return replace(state, command=line[:-1] if line else None)
-    if len(key) == 1 and key.isprintable():
-        return replace(state, command=line + key)
-    return state
+    if key in _BACKSPACES and not line:
+        return replace(state, command=None)
+    return replace(state, command=_edit(line, key))
 
 
 def _run_command(state: ReaderState, line: str) -> ReaderState:
@@ -456,7 +528,7 @@ def _run_command(state: ReaderState, line: str) -> ReaderState:
         return replace(state, message=str(exc))
     match command:
         case QuitCommand():
-            return replace(state, quit=True)
+            return _quit(state)
         case GotoCommand(percent=percent):
             return _goto(state, percent)
         case SetCommand(key=key, value=value):

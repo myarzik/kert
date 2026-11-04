@@ -25,6 +25,7 @@ PROMPTS = {
     "rating": "y recalled / p partial / n blank / Esc skip",
     "recap": "recap — any key",
 }
+LINE_PROMPT = "recall (one line, Enter to submit, Esc to skip):"  # §17.8
 
 
 def build_frame(state: ReaderState) -> RenderableType:
@@ -40,9 +41,13 @@ def build_frame(state: ReaderState) -> RenderableType:
     # Center focus (§7.1): the chunk's first line sits on row (H - h) // 2 and
     # the text runs above and below it as one tape, cut at the screen edges.
     if state.overlay is not None:
-        content = (
-            _recap(state, height, width, theme) if state.overlay == "recap" else []
-        )
+        content = []
+        if state.overlay == "recap":
+            content = _recap(state, height, width, theme)
+        elif state.overlay == "line":
+            center = (height - 1) // 2
+            prompt = Text(LINE_PROMPT[:width], style=theme.status)
+            content = [*[Text()] * center, prompt]
         content += [Text()] * (height - len(content))
         content.append(_status(state, width, theme))
         return Group(*(Text(margin) + line if line else line for line in content))
@@ -166,7 +171,9 @@ def _recap(state: ReaderState, height: int, width: int, theme: Theme) -> list[Te
 
 
 def _status(state: ReaderState, width: int, theme: Theme) -> Text:
-    if state.overlay is not None:
+    if state.overlay == "line":
+        left = f"> {state.line}"
+    elif state.overlay is not None:
         left = PROMPTS[state.overlay]
     elif state.command is not None:
         left = f":{state.command}"

@@ -599,7 +599,8 @@ def test_goal_in_words_is_reached_by_reading_from_the_arming_place():
 
 
 def test_goal_again_rearms_from_the_current_place():
-    state = press(type_command(at(0), "goal 5w"), "j", "j")
+    # Esc skips the goal checkpoint (§17.8) offered when the goal is reached.
+    state = press(type_command(at(0), "goal 5w"), "j", "j", key.ESC)
     state = type_command(state, "goal again")
     assert state.message == "goal 5w"
 
@@ -790,7 +791,7 @@ RATING = "rating"
 def long_book(sentences=60):
     """One block per 5 sentences of 10 words each: 600 words, one chunk per
     sentence at W=12 (11 tokens <= W + 2)."""
-    words = " ".join(f"w{i}" for i in range(10))
+    words = " ".join(["word"] * 10)
     return Book(
         blocks=tuple(Block(b, "paragraph") for b in range(1, sentences // 5 + 1)),
         sentences=tuple(
