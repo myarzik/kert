@@ -66,7 +66,27 @@ def _reference(kert: Path) -> dict:
                 chunks.spans, chunks.words, chunks.words_before, strict=True
             )
         ]
-    return {"file": kert.name, "word_count": book.word_count, "widths": widths}
+    # §17.12: units of the other reading modes, as [first sentence id, start
+    # token, last sentence id, end token, words, words before].
+    modes = {}
+    for mode in ("sentence", "paragraph"):
+        chunks = build_chunks(book, WIDTH_MIN, mode)
+        modes[mode] = [
+            [span.sentence_id, span.start_token, book.sentences[last].id, end, w, b]
+            for span, (last, end), w, b in zip(
+                chunks.spans,
+                chunks.ends,
+                chunks.words,
+                chunks.words_before,
+                strict=True,
+            )
+        ]
+    return {
+        "file": kert.name,
+        "word_count": book.word_count,
+        "widths": widths,
+        "modes": modes,
+    }
 
 
 def export(out: Path) -> None:
