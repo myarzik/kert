@@ -46,8 +46,10 @@ def build_frame(state: ReaderState) -> RenderableType:
             content = _recap(state, height, width, theme)
         elif state.overlay == "line":
             center = (height - 1) // 2
+            # The message (e.g. goal reached) sits on the row above the prompt.
+            message = Text((state.message or "")[:width], style=theme.status)
             prompt = Text(LINE_PROMPT[:width], style=theme.status)
-            content = [*[Text()] * center, prompt]
+            content = [*[Text()] * (center - 1), message, prompt]
         content += [Text()] * (height - len(content))
         content.append(_status(state, width, theme))
         return Group(*(Text(margin) + line if line else line for line in content))
