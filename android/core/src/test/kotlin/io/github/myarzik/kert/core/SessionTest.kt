@@ -145,6 +145,18 @@ class SessionTest {
     }
 
     @Test
+    fun `the session stamps each action with the clock and reloads the log`() {
+        val session = open()
+        session.dispatch(Action.Next) // clock 1000
+        assertEquals(1000.0, session.state.now)
+        session.close()
+
+        val reopened = open()
+        assertEquals(listOf(LogRow(1000.0, 2, 1, "step", "chunk")), reopened.state.log)
+        reopened.close()
+    }
+
+    @Test
     fun `settings write both the book and the app defaults`() {
         val defaults = FakeDefaults()
         val session = open(defaults)
