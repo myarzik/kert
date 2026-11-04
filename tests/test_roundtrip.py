@@ -220,5 +220,17 @@ def test_moves_are_logged_with_the_mode_in_force(book_path, toml):
         store.close()
 
 
+def test_session_keeps_the_log_and_the_clock(book_path, toml):
+    store, state = open_session(book_path, config_file=toml)
+    state = type_keys(store, state, ["j"], toml, lambda: 7.0)
+    close_session(store, state)
+
+    store, state = open_session(book_path, config_file=toml)
+    try:
+        assert [(row.ts, row.chunk_words) for row in state.log] == [(7.0, 2)]
+    finally:
+        store.close()
+
+
 def test_cli_read_missing_book_is_user_error(tmp_path):
     assert main(["read", str(tmp_path / "missing.kert")]) == 1

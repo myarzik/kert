@@ -12,6 +12,7 @@ from kert.reader.state import (
     initial_state,
 )
 from kert.reader.store import Position
+from kert.reader.tempo import LogRow
 
 W5 = Settings(chunk_width=5, theme="dark")
 W8 = Settings(chunk_width=8, theme="dark")
@@ -568,3 +569,93 @@ def test_width_is_stored_in_other_modes_and_used_back_in_chunk_mode():
     assert state.settings.chunk_width == 8
     assert state.position == Position(2, 0)
     assert type_command(state, "set mode=chunk").chunks.spans == at(1, W8).chunks.spans
+
+
+# --- R5 session goal (§17.6) ----------------------------------------------------------
+# mini_book at W=5: words before each chunk 0, 2, 7, 11, 13, 18.
+
+REACHED = "goal reached — :goal again"
+
+
+def press_at(state, now, *keys):
+    from dataclasses import replace
+
+    return press(replace(state, now=now), *keys)
+
+
+def test_goal_in_words_is_reached_by_reading_from_the_arming_place():
+    state = type_command(at(0), "goal 5w")
+    assert state.message == "goal 5w"
+    assert state.goal is not None
+
+    state = press(state, "j")  # 2 words read
+    assert state.message is None
+    state = press(state, "j")  # 7 words read
+    assert state.message == REACHED
+    assert state.goal is None
+
+
+def test_goal_again_rearms_from_the_current_place():
+    state = press(type_command(at(0), "goal 5w"), "j", "j")
+    state = type_command(state, "goal again")
+    assert state.message == "goal 5w"
+
+    assert press(state, "j").message is None  # 11 - 7 = 4
+    assert press(state, "j", "j").message == REACHED  # 13 - 7 = 6
+
+
+def test_goal_again_without_a_previous_goal():
+    state = type_command(at(0), "goal again")
+
+    assert state.goal is None
+    assert state.message == "no goal to re-arm"
+
+
+def test_goal_off_clears_the_goal():
+    state = type_command(type_command(at(0), "goal 5w"), "goal off")
+
+    assert state.goal is None
+    assert state.message == "goal off"
+    assert press(state, "j", "j").message is None
+
+
+@pytest.mark.parametrize(
+    "text", ["goal", "goal 0w", "goal 5x", "goal 601m", "goal 100001w", "goal 1.5m"]
+)
+def test_bad_goal_is_a_usage_error(text):
+    state = type_command(at(0), text)
+
+    assert state.goal is None
+    assert state.message.startswith("Usage: :goal")
+
+
+def test_moves_are_kept_as_log_rows_with_the_clock():
+    state = press_at(at(0), 5.0, "j")
+
+    assert state.log[-1] == LogRow(5.0, 2, 1, "step", "chunk")
+
+
+def test_goal_in_minutes_counts_active_reading_time():
+    state = type_command(press_at(at(0), 100.0), "goal 1m")
+    state = press_at(state, 100.0, "j")  # first row: no dwell yet
+    state = press_at(state, 130.0, "j")  # 30 s
+    assert state.message is None
+    state = press_at(state, 161.0, "j")  # 61 s
+    assert state.message == REACHED
+
+
+def test_idle_time_does_not_count_toward_a_minutes_goal():
+    state = type_command(press_at(at(0), 100.0), "goal 1m")
+    state = press_at(state, 100.0, "j")
+    state = press_at(state, 200.0, "j")  # 100 s: idle, discarded
+
+    assert state.message is None
+    assert state.goal is not None
+
+
+def test_default_goal_is_armed_at_start():
+    settings = Settings(chunk_width=5, theme="dark", default_goal="5w")
+    state = initial_state(mini_book(), settings, Position(1, 0), now=50.0)
+
+    assert state.goal is not None
+    assert press(state, "j", "j").message == REACHED

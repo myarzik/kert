@@ -466,3 +466,58 @@ def test_paragraph_mode_peek_shows_the_previous_block():
 
     assert style_of(state, "Short one.") == ("grey93", True)
     assert style_of(state, B3[0]) == ("grey39", False)
+
+
+# --- R5 goal segment (§17.6) ----------------------------------------------------------
+
+
+def fast_log(wps_words=4, dwell=2.0, n=31):
+    from kert.reader.tempo import LogRow
+
+    return tuple(
+        LogRow(1000.0 + i * dwell, wps_words, 1, "step", "chunk") for i in range(n)
+    )
+
+
+def goal_state(command, log=()):
+    # The clock is past the log, so none of its dwells count after arming.
+    state = initial_state(
+        mini_book(), DARK, Position(1, 0), size=(44, 12), now=2000.0, log=log
+    )
+    return handle_key_seq(state, [":", *command, key.ENTER])
+
+
+def handle_key_seq(state, keys):
+    for k in keys:
+        state = handle_key(state, k)
+    return state
+
+
+def test_words_goal_without_tempo_shows_remaining_words():
+    state = goal_state("goal 20w")
+
+    assert lines(state)[-1] == status("▸ 20 w   0.0%", left="goal 20w")
+
+
+def test_words_goal_with_tempo_adds_the_eta():
+    # 2 words per second: 20 words take 10 s, shown as at least ~1 min.
+    state = goal_state("goal 20w", log=fast_log())
+
+    assert lines(state)[-1] == status("▸ 20 w · ~1 min   0.0%", left="goal 20w")
+
+
+def test_minutes_goal_without_tempo_shows_remaining_minutes():
+    assert lines(goal_state("goal 6m"))[-1] == status("▸ 6 min   0.0%", left="goal 6m")
+
+
+def test_minutes_goal_with_tempo_estimates_words_to_the_nearest_ten():
+    # 360 s at 2 words per second = 720 words.
+    state = goal_state("goal 6m", log=fast_log())
+
+    assert lines(state)[-1] == status("▸ 6 min · ~720 w   0.0%", left="goal 6m")
+
+
+def test_goal_segment_updates_while_reading():
+    state = handle_key(goal_state("goal 20w"), "j")  # 2 words read
+
+    assert lines(state)[-1] == status("▸ 18 w   9.1%")

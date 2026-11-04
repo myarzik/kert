@@ -128,6 +128,9 @@ class BookStore:
                 (ts, sentence_id, chunk_words, direction, kind, mode),
             )
 
+    def recent_advances(self, limit: int):
+        raise NotImplementedError
+
     def trim_advance_log(self, keep: int) -> None:
         """Delete all but the `keep` newest advance_log rows."""
         with self._conn:

@@ -25,6 +25,7 @@ class Settings:
     chunk_width: int
     theme: str
     mode: str = "chunk"  # §17.2: per book only, never in the TOML
+    default_goal: str | None = None  # §17.6: TOML only
 
 
 HARDCODED = Settings(chunk_width=8, theme="dark")

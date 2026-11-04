@@ -262,3 +262,18 @@ def test_advance_log_writes_leave_content_tables_untouched(book_path):
         s.trim_advance_log(keep=0)
 
     assert content_digest(book_path) == before
+
+
+@spacy
+def test_recent_advances_are_the_newest_rows_oldest_first(book_path):
+    from kert.reader.tempo import LogRow
+
+    with BookStore.open(book_path) as s:
+        for i in range(5):
+            s.log_advance(ts=float(i), sentence_id=1, chunk_words=i, direction=1)
+        s.log_advance(ts=9.0, sentence_id=2, chunk_words=3, direction=0, kind="peek")
+        assert s.recent_advances(3) == (
+            LogRow(3.0, 3, 1, "step", "chunk"),
+            LogRow(4.0, 4, 1, "step", "chunk"),
+            LogRow(9.0, 3, 0, "peek", "chunk"),
+        )

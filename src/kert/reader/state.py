@@ -15,6 +15,7 @@ from kert.reader.chunker import assemble
 from kert.reader.commands import GotoCommand, QuitCommand, SetCommand, parse_command
 from kert.reader.config import Settings
 from kert.reader.store import Position
+from kert.reader.tempo import LogRow
 
 _NEXT = {" ", "j", keys.RIGHT}
 _PREVIOUS = {"b", "k", keys.LEFT}
@@ -162,6 +163,9 @@ class ReaderState:
     command: str | None = None  # `:` line contents; None outside command mode
     pending_g: bool = False
     peek: bool = False  # §17.3, transient
+    now: float = 0.0  # clock at the current key, set by the app loop
+    log: tuple[LogRow, ...] = ()  # recent advance_log rows (§17.6)
+    goal: object | None = None
     message: str | None = None
     effects: tuple[Effect, ...] = ()
     quit: bool = False
@@ -187,6 +191,8 @@ def initial_state(
     settings: Settings,
     position: Position,
     size: tuple[int, int] = (80, 24),
+    now: float = 0.0,
+    log: tuple[LogRow, ...] = (),
 ) -> ReaderState:
     chunks = build_chunks(book, settings.chunk_width, settings.mode)
     index = _resolve(book, chunks, position.sentence_id, position.chunk_start_token)

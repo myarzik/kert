@@ -304,3 +304,30 @@ def test_validate_accepts_modes(raw):
 def test_validate_rejects_unknown_mode():
     with pytest.raises(KertError, match="mode must be one of"):
         config.validate("mode", "plain")
+
+
+# --- default_goal: TOML only (§17.6, §17.10) ----------------------------------------
+
+
+@pytest.mark.parametrize("raw", ["15m", "2000w"])
+def test_default_goal_comes_from_the_toml(toml, raw):
+    write(toml, f'default_goal = "{raw}"\n')
+
+    assert load_global(toml).default_goal == raw
+    assert resolve(FakeBook(), load_global(toml)).default_goal == raw
+
+
+@pytest.mark.parametrize("value", ['"15x"', '"0m"', "15", '"601m"'])
+def test_invalid_default_goal_is_ignored(toml, value):
+    write(toml, f"default_goal = {value}\n")
+
+    assert load_global(toml).default_goal is None
+
+
+def test_set_keeps_the_default_goal_in_the_toml(toml):
+    write(toml, 'default_goal = "15m"\n')
+
+    set_setting(FakeBook(), "theme", "light", toml)
+
+    assert load_global(toml).default_goal == "15m"
+    assert load_global(toml).theme == "light"
