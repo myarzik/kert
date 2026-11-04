@@ -1217,4 +1217,39 @@ key, keeping the others' current values.
 32. R6 checkpoints, line editor, Ctrl+C flow; roundtrip hash check extended.
 33. README (keys, commands, settings, validation protocol), acceptance item:
     Cyrillic recall line in Windows Terminal.
-34+. Android port of §17, planned as its own task list when started.
+34. `keys.py` POSIX Esc timeout (§8.3 amendment).
+35+. Android port of §17: see §17.12.
+
+### 17.12 Android port (stage 0 app, extends §16)
+
+Approved 2026-11-04. `core` mirrors `src/kert/reader/state.py` exactly (§16.3
+rule: Python is the reference); the app maps the terminal keys to touch.
+
+| Terminal | Android |
+|---|---|
+| `Space`/`b` (unit) | tap right two thirds / left third (as before), volume keys |
+| `J`/`K` (block) | vertical swipe (as before) |
+| `(` / `)` | horizontal swipe right / left (finger moves right = back) |
+| `p` peek | press and hold: peek while held (no key-up limit on Android); one `peek` row per hold |
+| `q`, Ctrl+C | Back; offers the quit checkpoint per §17.8 |
+| `:set mode/width/theme/recap/recall…`, `:goal` | top panel: mode, width, theme, goal (`10m`, `15m`, `30m`, `off`, `again`), recap and recall switches |
+| recall / rating / recap / recall line overlays | full-screen cards: "Tap to continue", buttons Recalled / Partial / Blank / Skip, a one-line text field with Submit / Skip |
+
+- Colors (§17.5): the presets' xterm-256 RGB on the app's backgrounds
+  (`#0E0E0E`, `#FAFAFA`); `core` checks the contrast floor against those.
+- Settings: per-book `reader_state` > SharedPreferences > hardcoded, as
+  §16.5; `mode` is per book only (§17.2). No `default_goal` on Android.
+- `advance_log` rows carry `kind` and `mode`; `checkpoints` rows as §17.4.
+- Reference cross-check (§16.6) is extended with the unit spans of the
+  `sentence` and `paragraph` modes.
+
+Task order:
+
+35. `core` palettes and contrast floor; app uses them.
+36. `core` units and modes, R1 actions (sentence back/forward, peek),
+    per-action log kinds and mode; reference export of mode units.
+37. `core` tempo, goals and the goal segment text.
+38. `core` re-entry overlays (recall, rating, recap) and checkpoints
+    (goal, quit), session writes.
+39. `app` UI: gestures, panel, overlays, status goal segment.
+40. README Android section and acceptance items.
