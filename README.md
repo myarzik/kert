@@ -73,7 +73,7 @@ for each language you compile with `--with`. The pinned versions must match
 the pinned spaCy (3.8.x):
 
 ```sh
-git clone <this repository> kert && cd kert
+git clone https://github.com/myarzik/kert.git && cd kert
 uv tool install . --python 3.14 \
   --with "ru-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/ru_core_news_sm-3.8.0/ru_core_news_sm-3.8.0-py3-none-any.whl" \
   --with "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
