@@ -57,6 +57,7 @@ import io.github.myarzik.kert.core.BlockView
 import io.github.myarzik.kert.core.BookLayout
 import io.github.myarzik.kert.core.Centering
 import io.github.myarzik.kert.core.LibraryEntry
+import io.github.myarzik.kert.core.Palettes
 import io.github.myarzik.kert.core.Reader
 import io.github.myarzik.kert.core.ReaderState
 import io.github.myarzik.kert.core.Settings
@@ -67,13 +68,14 @@ import kotlin.math.abs
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/** §7.2 presets: xterm-256 greys as RGB (grey35 #585858, grey50 #808080, grey62 #9e9e9e, grey74 #bcbcbc). */
+/** §17.5 presets from core as Compose colors (§17.12). */
 private data class Palette(val background: Color, val active: Color, val rest: Color, val neighbor: Color)
 
-private val DARK = Palette(Color(0xFF0E0E0E), Color.White, Color(0xFF808080), Color(0xFF585858))
-private val LIGHT = Palette(Color(0xFFFAFAFA), Color.Black, Color(0xFF9E9E9E), Color(0xFFBCBCBC))
-
-private fun Theme.palette() = if (this == Theme.DARK) DARK else LIGHT
+private fun Theme.palette(): Palette {
+    val p = Palettes.of(this)
+    fun color(rgb: Int) = Color(0xFF000000.toInt() or rgb)
+    return Palette(color(p.background), color(p.active), color(p.rest), color(p.neighbor))
+}
 
 private fun percentText(state: ReaderState) = String.format(Locale.ROOT, "%.1f%%", state.percent)
 
