@@ -14,7 +14,18 @@ enum class GoalUnit(val storage: String, val max: Int) { MINUTES("m", 600), WORD
 /** A session goal (§17.6): [amount] minutes or words, counted from when it was armed. */
 data class Goal(val amount: Int, val unit: GoalUnit, val armedAt: Double, val startWords: Int)
 
-data class Settings(val chunkWidth: Int, val theme: Theme, val mode: Mode = Mode.CHUNK)
+data class Settings(
+    val chunkWidth: Int,
+    val theme: Theme,
+    val mode: Mode = Mode.CHUNK,
+    val recap: Boolean = true, // §17.7, §17.10
+    val recapWords: Int = 40,
+    val recall: Boolean = true,
+    val recallGapMinutes: Int = 60,
+)
+
+/** Re-entry and checkpoint screens (§17.7, §17.8); full-screen cards in the app (§17.12). */
+enum class Overlay { RECALL, LINE, RATING, RECAP }
 
 sealed interface Action {
     data object Next : Action
@@ -34,6 +45,19 @@ sealed interface Action {
     data class SetGoal(val amount: Int, val unit: GoalUnit) : Action
     data object GoalOff : Action
     data object GoalAgain : Action
+    data class SetRecap(val on: Boolean) : Action
+    data class SetRecall(val on: Boolean) : Action
+
+    /** "Tap to continue" on the recall and recap cards. */
+    data object Continue : Action
+    data class SubmitRecall(val text: String) : Action
+    data object SkipRecall : Action
+
+    /** Recalled 2 / Partial 1 / Blank 0; null = Skip. */
+    data class Rate(val rating: Int?) : Action
+
+    /** Back: `q` and Ctrl+C (§17.8, §17.12). */
+    data object Quit : Action
 }
 
 sealed interface Effect {
@@ -45,6 +69,17 @@ sealed interface Effect {
         val kind: String = "step",
     ) : Effect
     data class SaveSetting(val key: String, val value: String) : Effect
+
+    /** A checkpoints row (§17.8); the session adds the clock. */
+    data class Checkpoint(
+        val trigger: String,
+        val mode: String,
+        val spanStartSentence: Long,
+        val spanEndSentence: Long,
+        val spanWords: Int,
+        val recallText: String?,
+        val selfRating: Int?,
+    ) : Effect
 }
 
 /**
@@ -129,8 +164,14 @@ data class ReaderState(
     val log: List<LogRow> = emptyList(),
     val goal: Goal? = null,
     val lastGoal: Pair<Int, GoalUnit>? = null,
+    val overlay: Overlay? = null,
+    val pending: String? = null, // trigger of the checkpoint being taken
+    val line: String = "", // recall text submitted on the line card
+    val sessionWords: Int = 0, // words before the unit where the session started
+    val spanFrom: Pair<Long, Int> = 0L to 0, // (sentence_id, words before) of the span
     val message: String? = null,
     val effects: List<Effect> = emptyList(),
+    val quit: Boolean = false,
 ) {
     val active: ChunkSpan get() = chunks.spans[index]
 
@@ -173,7 +214,17 @@ object Reader {
     private fun secondsLeft(state: ReaderState, goal: Goal): Double =
         maxOf(0.0, goal.amount * 60 - Tempo.activeSeconds(state.log, state.settings.mode.storage, goal.armedAt))
 
-    fun initial(book: BookContent, settings: Settings, position: Position): ReaderState {
+    fun start(state: ReaderState): ReaderState = TODO()
+
+    fun recapStart(state: ReaderState): Int? = TODO()
+
+    fun initial(
+        book: BookContent,
+        settings: Settings,
+        position: Position,
+        now: Double = 0.0,
+        log: List<LogRow> = emptyList(),
+    ): ReaderState {
         val chunks = Chunks.build(book, settings.chunkWidth, settings.mode)
         if (chunks.spans.isEmpty()) throw KertFormatException("This book has no text to read.")
         return ReaderState(book, settings, chunks, resolve(book, chunks, position))
@@ -229,6 +280,8 @@ object Reader {
             Action.GoalOff -> s.copy(goal = null, message = "goal off")
             Action.GoalAgain -> s.lastGoal?.let { (amount, unit) -> arm(s, amount, unit) }
                 ?: s.copy(message = "no goal to re-arm")
+            is Action.SetRecap, is Action.SetRecall, Action.Continue, is Action.SubmitRecall,
+            Action.SkipRecall, is Action.Rate, Action.Quit -> TODO()
             is Action.SetMode -> reassemble(
                 s, s.settings.copy(mode = action.mode), Effect.SaveSetting("mode", action.mode.storage),
             )

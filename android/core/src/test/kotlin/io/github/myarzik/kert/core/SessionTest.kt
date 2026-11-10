@@ -5,6 +5,8 @@ import java.nio.file.Path
 import java.security.MessageDigest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -19,6 +21,8 @@ class SessionTest {
     private class FakeDefaults(
         override val chunkWidth: Int? = null,
         override val theme: Theme? = null,
+        override val recap: Boolean? = null,
+        override val recall: Boolean? = null,
     ) : SettingsDefaults {
         val saved = mutableListOf<Pair<String, String>>()
 
@@ -104,12 +108,12 @@ class SessionTest {
     @Test
     fun `steps write advance_log rows with the clock`() {
         val session = open()
-        session.dispatch(Action.Next) // leaves S1 "Глава 1": 2 words
+        session.dispatch(Action.Next) // leaves S1 "Глава 1": 2 words; opening read the clock at 1000
         session.dispatch(Action.Previous) // leaves S2: 7 words at W=8
         session.close()
 
         assertEquals(
-            listOf(listOf(1000.0, 1L, 2L, 1L), listOf(1001.0, 2L, 7L, -1L)),
+            listOf(listOf(1001.0, 1L, 2L, 1L), listOf(1002.0, 2L, 7L, -1L)),
             sql("SELECT ts, sentence_id, chunk_words, direction FROM advance_log ORDER BY id")
                 .map { r -> r.map { (it as Number).let { n -> if (it is Double) n.toDouble() else n.toLong() } } },
         )
@@ -146,13 +150,14 @@ class SessionTest {
 
     @Test
     fun `the session stamps each action with the clock and reloads the log`() {
-        val session = open()
-        session.dispatch(Action.Next) // clock 1000
+        val session = open() // clock 1000
         assertEquals(1000.0, session.state.now)
+        session.dispatch(Action.Next) // clock 1001
+        assertEquals(1001.0, session.state.now)
         session.close()
 
         val reopened = open()
-        assertEquals(listOf(LogRow(1000.0, 2, 1, "step", "chunk")), reopened.state.log)
+        assertEquals(listOf(LogRow(1001.0, 2, 1, "step", "chunk")), reopened.state.log)
         reopened.close()
     }
 
@@ -167,6 +172,85 @@ class SessionTest {
         assertEquals("6", state("chunk_width"))
         assertEquals("dark", state("theme"))
         assertEquals(listOf("chunk_width" to "6", "theme" to "dark"), defaults.saved)
+    }
+
+    @Test
+    fun `recap and recall settings resolve per key`() {
+        setState("recap", "off")
+        setState("recap_words", "60")
+        setState("recall_gap_minutes", "5")
+        val session = open(FakeDefaults(recap = true, recall = false))
+        assertEquals(
+            Settings(8, Theme.LIGHT, recap = false, recapWords = 60, recall = false, recallGapMinutes = 5),
+            session.state.settings,
+        )
+        session.close()
+    }
+
+    @Test
+    fun `invalid recap and recall values fall through`() {
+        setState("recap", "maybe")
+        setState("recall", "1")
+        setState("recap_words", "999")
+        setState("recall_gap_minutes", "4")
+        val session = open(FakeDefaults(recap = false))
+        assertEquals(Settings(8, Theme.LIGHT, recap = false), session.state.settings)
+        session.close()
+    }
+
+    @Test
+    fun `recap and recall switches write both the book and the app defaults`() {
+        val defaults = FakeDefaults()
+        val session = open(defaults)
+        session.dispatch(Action.SetRecap(false))
+        session.dispatch(Action.SetRecall(false))
+        session.close()
+
+        assertEquals("off", state("recap"))
+        assertEquals("off", state("recall"))
+        assertEquals(listOf("recap" to "off", "recall" to "off"), defaults.saved)
+    }
+
+    // --- Re-entry and checkpoints (§17.7, §17.8; tests/test_roundtrip.py) -----------------
+
+    private fun openAt(time: Double) = ReadingSession.open(JdbcConnection(book), FakeDefaults(), fallback) { time }
+
+    private fun checkpointRows() =
+        sql(
+            "SELECT ts, trigger, mode, span_start_sentence, span_end_sentence, span_words, recall_text, " +
+                "self_rating FROM checkpoints ORDER BY id",
+        ).map { r -> r.map { if (it is Number && it !is Double) it.toLong() else it } }
+
+    @Test
+    fun `reopening after a long gap records the recall rating`() {
+        openAt(10.0).apply { dispatch(Action.NextBlock); dispatch(Action.NextBlock); close() } // S4 "— Привет"
+
+        val later = 10.0 + 3600.0
+        val session = openAt(later)
+        assertEquals(Overlay.RECALL, session.state.overlay)
+        session.dispatch(Action.Continue)
+        session.dispatch(Action.Rate(1))
+        session.dispatch(Action.Continue)
+        assertNull(session.state.overlay)
+        session.close()
+
+        assertEquals(listOf(listOf(later, "open", "chunk", 4L, 4L, 0L, null, 1L)), checkpointRows())
+    }
+
+    @Test
+    fun `goal checkpoint is written and content stays untouched`() {
+        val before = contentDigest()
+        val session = openAt(5.0)
+        session.dispatch(Action.SetGoal(2, GoalUnit.WORDS))
+        session.dispatch(Action.Next) // reached on leaving "Глава 1" (S1) for S2
+        session.dispatch(Action.SubmitRecall("дождь"))
+        session.dispatch(Action.Rate(2))
+        session.dispatch(Action.Quit)
+        assertTrue(session.state.quit)
+        session.close()
+
+        assertEquals(listOf(listOf(5.0, "goal", "chunk", 1L, 2L, 2L, "дождь", 2L)), checkpointRows())
+        assertEquals(before, contentDigest())
     }
 
     // --- Closing (§5 on exit, §16.4) ------------------------------------------------------
@@ -184,11 +268,11 @@ class SessionTest {
     fun `close writes library percent and last read`() {
         now = 5000.0
         val session = open()
-        repeat(3) { session.dispatch(Action.Next) } // 13 of 31 words before S4; ts 5000-5002
+        repeat(3) { session.dispatch(Action.Next) } // 13 of 31 words before S4; open 5000, ts 5001-5003
         session.close() // the clock's next tick is the close time
 
         assertEquals("41.9", state("percent"))
-        assertEquals("5003", state("last_read"))
+        assertEquals("5004", state("last_read"))
     }
 
     @Test

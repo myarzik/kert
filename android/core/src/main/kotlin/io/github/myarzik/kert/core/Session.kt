@@ -6,6 +6,8 @@ import java.util.Locale
 interface SettingsDefaults {
     val chunkWidth: Int?
     val theme: Theme?
+    val recap: Boolean? get() = null
+    val recall: Boolean? get() = null
 
     fun save(key: String, value: String)
 }
@@ -42,6 +44,7 @@ class ReadingSession private constructor(
                     now, effect.sentenceId, effect.chunkWords, effect.direction,
                     effect.kind, state.settings.mode.storage,
                 )
+                is Effect.Checkpoint -> TODO()
                 is Effect.SaveSetting -> {
                     saveState(db, effect.key, effect.value)
                     // §17.2: the mode is an experimental condition, kept per book only.

@@ -2,6 +2,7 @@ package io.github.myarzik.kert.core
 
 import java.nio.file.Path
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -386,7 +387,10 @@ class ReaderTest {
 
     @Test
     fun `goal again rearms from the current place`() {
-        val state = at(0).then(Action.SetGoal(5, GoalUnit.WORDS), Action.Next, Action.Next, Action.GoalAgain)
+        // SkipRecall skips the goal checkpoint (§17.8) offered when the goal is reached.
+        val state = at(0).then(
+            Action.SetGoal(5, GoalUnit.WORDS), Action.Next, Action.Next, Action.SkipRecall, Action.GoalAgain,
+        )
         assertEquals("goal 5w", state.message)
         assertNull(state.then(Action.Next).message)
         assertEquals(Reader.GOAL_REACHED, state.then(Action.Next, Action.Next).message)
@@ -450,5 +454,251 @@ class ReaderTest {
         assertEquals("▸ 6 min · ~720 w", Reader.goalSegment(goalAt(6, GoalUnit.MINUTES, fastLog())))
         assertEquals("▸ 18 w", Reader.goalSegment(goalAt(20, GoalUnit.WORDS).then(Action.Next)))
         assertNull(Reader.goalSegment(at(0)))
+    }
+
+    // --- R3/R4 re-entry: recall card, rating, recap (§17.7, §17.12) ----------------------------
+
+    private val hour = 3600.0
+
+    /** State on chunk [index] opened [gap] seconds after the last logged move. */
+    private fun reopened(index: Int, gap: Double, settings: Settings = W5, logRows: Int = 1): ReaderState {
+        val (sid, token) = startsW5[index]
+        val log = List(logRows) { LogRow(1000.0 - it, 2, 1, "step", "chunk") }
+        return Reader.start(Reader.initial(miniBook(), settings, Position(sid, token), now = 1000.0 + gap, log = log))
+    }
+
+    private fun openCheckpoint(rating: Int?, sentenceId: Long = 4) =
+        Effect.Checkpoint("open", "chunk", sentenceId, sentenceId, 0, null, rating)
+
+    @Test
+    fun `long gap starts with the recall card`() = assertEquals(Overlay.RECALL, reopened(4, hour).overlay)
+
+    @Test
+    fun `recall then rating then recap`() {
+        var state = reopened(4, hour).then(Action.Continue)
+        assertEquals(Overlay.RATING, state.overlay)
+
+        state = state.then(Action.Rate(2))
+        assertEquals(listOf(openCheckpoint(2)), state.effects)
+        assertEquals(Overlay.RECAP, state.overlay)
+
+        state = state.then(Action.Continue)
+        assertNull(state.overlay)
+        assertEquals(4, state.index)
+        assertEquals(emptyList<Effect>(), state.effects)
+    }
+
+    @Test
+    fun `rating buttons`() {
+        for (rating in listOf(2, 1, 0, null)) {
+            assertEquals(listOf(openCheckpoint(rating)), reopened(4, hour).then(Action.Continue, Action.Rate(rating)).effects)
+        }
+    }
+
+    @Test
+    fun `other actions keep the rating card`() {
+        val state = reopened(4, hour).then(
+            Action.Continue, Action.Next, Action.Continue, Action.NextBlock, Action.SubmitRecall("x"), Action.Rate(3),
+        )
+        assertEquals(Overlay.RATING, state.overlay)
+        assertEquals(4, state.index)
+        assertFalse(state.quit)
+        assertEquals(emptyList<Effect>(), state.effects)
+    }
+
+    @Test
+    fun `any action dismisses the recap and is consumed`() {
+        val state = reopened(4, 0.0).then(Action.Next)
+        assertNull(state.overlay)
+        assertEquals(4, state.index)
+        assertEquals(emptyList<Effect>(), state.effects)
+    }
+
+    @Test
+    fun `short gap goes straight to the recap`() = assertEquals(Overlay.RECAP, reopened(4, hour - 1).overlay)
+
+    @Test
+    fun `empty log has no gap and no recall card`() =
+        assertEquals(Overlay.RECAP, reopened(4, hour, logRows = 0).overlay)
+
+    @Test
+    fun `book start has no recall and no recap`() = assertNull(reopened(0, hour).overlay)
+
+    @Test
+    fun `recap off after a short gap reads directly`() = assertNull(reopened(4, 60.0, W5.copy(recap = false)).overlay)
+
+    @Test
+    fun `recall off skips the card`() = assertEquals(Overlay.RECAP, reopened(4, hour, W5.copy(recall = false)).overlay)
+
+    @Test
+    fun `recall without recap ends in reading`() =
+        assertNull(reopened(4, hour, W5.copy(recap = false)).then(Action.Continue, Action.Rate(2)).overlay)
+
+    @Test
+    fun `recall gap is a setting`() {
+        val settings = W5.copy(recallGapMinutes = 5)
+        assertEquals(Overlay.RECALL, reopened(4, 301.0, settings).overlay)
+        assertEquals(Overlay.RECAP, reopened(4, 299.0, settings).overlay)
+    }
+
+    @ParameterizedTest
+    // back 2 + 4 + 5 = 11 >= 10 words, across the block boundary; at least one whole unit; the book start bounds it
+    @CsvSource("4,10,1", "4,1,3", "2,40,0")
+    fun `recap takes whole units back to the word budget`(index: Int, words: Int, start: Int) =
+        assertEquals(start, Reader.recapStart(reopened(index, 0.0, W5.copy(recapWords = words))))
+
+    @Test
+    fun `no recap at the book start`() = assertNull(Reader.recapStart(reopened(0, 0.0)))
+
+    @Test
+    fun `recap and recall switches are saved`() {
+        val off = at(0).then(Action.SetRecap(false))
+        assertFalse(off.settings.recap)
+        assertEquals(listOf(Effect.SaveSetting("recap", "off")), off.effects)
+        val on = off.then(Action.SetRecall(false), Action.SetRecall(true))
+        assertTrue(on.settings.recall)
+        assertEquals(listOf(Effect.SaveSetting("recall", "on")), on.effects)
+    }
+
+    // --- R6 checkpoint recall: quit and goal triggers (§17.8, §17.12) --------------------------
+
+    private val w12 = Settings(chunkWidth = 12, theme = Theme.DARK)
+
+    /** One block per 5 sentences of 10 words each: 600 words, one chunk per sentence at W=12. */
+    private fun longBook(sentences: Int = 60) = BookContent(
+        meta = mapOf("schema_version" to "1", "word_count" to "${sentences * 10}"),
+        blocks = (1..sentences / 5).map { Block(it.toLong(), "paragraph", null) },
+        sentences = (1..sentences).map {
+            sentence(it.toLong(), ((it - 1) / 5 + 1).toLong(), (it - 1) % 5, List(10) { "word" }.joinToString(" ") + ".")
+        },
+        wordCount = sentences * 10,
+    )
+
+    /** longBook state on sentence [sentenceId], reached by reading forward from [from]. */
+    private fun longAt(sentenceId: Int, settings: Settings = w12, from: Int = 1) =
+        Reader.initial(longBook(), settings, Position(from.toLong(), 0))
+            .then(*Array(sentenceId - from) { Action.NextSentence })
+
+    private fun quitCheckpoint(text: String?, rating: Int?, start: Long = 1, end: Long = 51, words: Int = 500) =
+        Effect.Checkpoint("quit", "chunk", start, end, words, text, rating)
+
+    @Test
+    fun `quit before 500 words quits at once`() {
+        val state = longAt(50).then(Action.Quit) // 490 words read
+        assertTrue(state.quit)
+        assertNull(state.overlay)
+    }
+
+    @Test
+    fun `quit after 500 words offers the recall line`() {
+        val state = longAt(51).then(Action.Quit) // 500 words read
+        assertFalse(state.quit)
+        assertEquals(Overlay.LINE, state.overlay)
+    }
+
+    @Test
+    fun `quit checkpoint line then rating then exit`() {
+        var state = longAt(51).then(Action.Quit, Action.SubmitRecall("он ушёл"))
+        assertEquals(Overlay.RATING, state.overlay)
+        assertEquals(emptyList<Effect>(), state.effects)
+
+        state = state.then(Action.Rate(2))
+        assertEquals(listOf(quitCheckpoint("он ушёл", 2)), state.effects)
+        assertTrue(state.quit)
+    }
+
+    @Test
+    fun `skip at the line skips the checkpoint and exits`() {
+        val state = longAt(51).then(Action.Quit, Action.SkipRecall)
+        assertTrue(state.quit)
+        assertEquals(emptyList<Effect>(), state.effects)
+    }
+
+    @Test
+    fun `skip at the rating writes the row without a rating`() {
+        val state = longAt(51).then(Action.Quit, Action.SubmitRecall("a"), Action.Rate(null))
+        assertEquals(listOf(quitCheckpoint("a", null)), state.effects)
+        assertTrue(state.quit)
+    }
+
+    @Test
+    fun `blank line is stored as no text`() =
+        assertEquals(
+            listOf(quitCheckpoint(null, 0)),
+            longAt(51).then(Action.Quit, Action.SubmitRecall(" "), Action.Rate(0)).effects,
+        )
+
+    @Test
+    fun `the line card ignores reading actions`() {
+        val state = longAt(51).then(
+            Action.Quit, Action.Next, Action.NextBlock, Action.Continue, Action.Rate(2),
+            Action.SubmitRecall("a"), Action.Rate(2),
+        )
+        assertEquals(listOf(quitCheckpoint("a", 2)), state.effects)
+        assertEquals(50, state.index)
+    }
+
+    @Test
+    fun `back offers the quit checkpoint and a second back skips it`() {
+        var state = longAt(51).then(Action.Quit)
+        assertEquals(Overlay.LINE, state.overlay)
+        state = state.then(Action.Quit)
+        assertTrue(state.quit)
+        assertEquals(emptyList<Effect>(), state.effects)
+    }
+
+    @Test
+    fun `back at the rating skips too`() {
+        val state = longAt(51).then(Action.Quit, Action.SubmitRecall("a"), Action.Quit)
+        assertTrue(state.quit)
+        assertEquals(emptyList<Effect>(), state.effects)
+    }
+
+    @Test
+    fun `back while peeking quits`() = assertTrue(longAt(2).then(Action.PeekStart, Action.Quit).quit)
+
+    @Test
+    fun `recall off never offers a checkpoint`() =
+        assertTrue(longAt(51, w12.copy(recall = false)).then(Action.Quit).quit)
+
+    @Test
+    fun `backward reading does not count toward the threshold`() =
+        assertTrue(longAt(51).then(Action.First, Action.Quit).quit)
+
+    @Test
+    fun `the span starts where the session started`() {
+        val state = longAt(56, from = 6).then(Action.Quit, Action.SubmitRecall("x"), Action.Rate(1))
+        assertEquals(listOf(quitCheckpoint("x", 1, start = 6, end = 56)), state.effects)
+    }
+
+    @Test
+    fun `goal reached offers a goal checkpoint and reading continues`() {
+        // mini book: goal of 5 words reached on chunk 2 (S2 token 5), 7 words read.
+        var state = at(0).then(Action.SetGoal(5, GoalUnit.WORDS), Action.Next, Action.Next)
+        assertEquals(Reader.GOAL_REACHED, state.message)
+        assertEquals(Overlay.LINE, state.overlay)
+
+        state = state.then(Action.SubmitRecall("ok"), Action.Rate(1))
+        assertEquals(listOf(Effect.Checkpoint("goal", "chunk", 1, 2, 7, "ok", 1)), state.effects)
+        assertNull(state.overlay)
+        assertFalse(state.quit)
+    }
+
+    @Test
+    fun `after a goal checkpoint the next span starts there`() {
+        val state = at(0).then(
+            Action.SetGoal(5, GoalUnit.WORDS), Action.Next, Action.Next, Action.SubmitRecall(""), Action.Rate(2),
+            Action.GoalAgain, Action.Next, Action.Next, // 13 - 7 = 6
+            Action.SubmitRecall(""), Action.Rate(2),
+        )
+        assertEquals(listOf(Effect.Checkpoint("goal", "chunk", 2, 4, 6, null, 2)), state.effects)
+    }
+
+    @Test
+    fun `goal reached without recall has no checkpoint`() {
+        val state = Reader.initial(miniBook(), W5.copy(recall = false), Position(1, 0))
+            .then(Action.SetGoal(5, GoalUnit.WORDS), Action.Next, Action.Next)
+        assertEquals(Reader.GOAL_REACHED, state.message)
+        assertNull(state.overlay)
     }
 }
