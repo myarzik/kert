@@ -190,6 +190,7 @@ object Reader {
     const val GOAL_REACHED = "goal reached"
 
     const val LOG_KEEP = 1000 // recent advance_log rows held for tempo (§17.6)
+    const val CHECKPOINT_MIN_WORDS = 500 // §17.8 quit trigger
 
     /** `▸ 640 w · ~4 min` / `▸ 6 min · ~1100 w` for the status line (§17.6), null without a goal. */
     fun goalSegment(state: ReaderState): String? {
@@ -214,9 +215,33 @@ object Reader {
     private fun secondsLeft(state: ReaderState, goal: Goal): Double =
         maxOf(0.0, goal.amount * 60 - Tempo.activeSeconds(state.log, state.settings.mode.storage, goal.armedAt))
 
-    fun start(state: ReaderState): ReaderState = TODO()
+    /** Open a reading session: the re-entry flow of §17.7, if any. */
+    fun start(state: ReaderState): ReaderState {
+        val overlay = entryOverlay(state)
+        return state.copy(overlay = overlay, pending = if (overlay == Overlay.RECALL) "open" else null)
+    }
 
-    fun recapStart(state: ReaderState): Int? = TODO()
+    /** Recall card after a long gap, else the recap (§17.7). */
+    private fun entryOverlay(s: ReaderState): Overlay? {
+        if (s.index == 0) return null
+        if (s.log.isNotEmpty() && s.settings.recall) {
+            val gap = s.now - s.log.maxOf { it.ts }
+            if (gap >= s.settings.recallGapMinutes * 60) return Overlay.RECALL
+        }
+        return if (s.settings.recap) Overlay.RECAP else null
+    }
+
+    /** First unit of the recap (§17.7): whole units back to recapWords. */
+    fun recapStart(state: ReaderState): Int? {
+        if (state.index == 0) return null
+        var start = state.index - 1
+        var words = state.chunks.words[start]
+        while (start > 0 && words < state.settings.recapWords) {
+            start--
+            words += state.chunks.words[start]
+        }
+        return start
+    }
 
     fun initial(
         book: BookContent,
@@ -227,7 +252,12 @@ object Reader {
     ): ReaderState {
         val chunks = Chunks.build(book, settings.chunkWidth, settings.mode)
         if (chunks.spans.isEmpty()) throw KertFormatException("This book has no text to read.")
-        return ReaderState(book, settings, chunks, resolve(book, chunks, position))
+        val index = resolve(book, chunks, position)
+        val words = chunks.wordsBefore[index]
+        return ReaderState(
+            book, settings, chunks, index,
+            now = now, log = log, sessionWords = words, spanFrom = chunks.spans[index].sentenceId to words,
+        )
     }
 
     fun reduce(state: ReaderState, action: Action): ReaderState {
@@ -241,9 +271,63 @@ object Reader {
     private fun checkGoal(s: ReaderState): ReaderState {
         val goal = s.goal ?: return s
         val left = if (goal.unit == GoalUnit.WORDS) wordsLeft(s, goal).toDouble() else secondsLeft(s, goal)
+        if (left > 0) return s
         // No automatic re-arming: the reward resets motivation (§17.6).
-        return if (left > 0) s else s.copy(goal = null, message = GOAL_REACHED)
+        val reached = s.copy(goal = null, message = GOAL_REACHED)
+        return if (s.settings.recall) offerCheckpoint(reached, "goal") else reached
     }
+
+    private fun offerCheckpoint(s: ReaderState, trigger: String) =
+        s.copy(overlay = Overlay.LINE, pending = trigger, line = "")
+
+    /** Quit, offering the checkpoint after a long enough session (§17.8). */
+    private fun quit(s: ReaderState): ReaderState {
+        val read = s.chunks.wordsBefore[s.index] - s.sessionWords
+        return if (s.settings.recall && read >= CHECKPOINT_MIN_WORDS) offerCheckpoint(s, "quit") else s.copy(quit = true)
+    }
+
+    /** Actions on the re-entry and checkpoint cards; every action here is consumed. */
+    private fun overlayAction(s: ReaderState, overlay: Overlay, action: Action): ReaderState = when (overlay) {
+        Overlay.RECALL -> s.copy(overlay = Overlay.RATING)
+        Overlay.RECAP -> s.copy(overlay = null)
+        Overlay.LINE -> when (action) {
+            is Action.SubmitRecall -> s.copy(overlay = Overlay.RATING, line = action.text)
+            Action.SkipRecall -> finishCheckpoint(s, null) // skips the whole checkpoint
+            else -> s
+        }
+        Overlay.RATING ->
+            if (action is Action.Rate && (action.rating == null || action.rating in 0..2)) {
+                finishCheckpoint(s, checkpointRow(s, action.rating))
+            } else {
+                s
+            }
+    }
+
+    private fun checkpointRow(s: ReaderState, rating: Int?): Effect.Checkpoint {
+        val sentenceId = s.active.sentenceId
+        val open = s.pending == "open" // a mental recall of the previous session
+        return Effect.Checkpoint(
+            trigger = s.pending.orEmpty(),
+            mode = s.settings.mode.storage,
+            spanStartSentence = if (open) sentenceId else s.spanFrom.first,
+            spanEndSentence = sentenceId,
+            spanWords = if (open) 0 else maxOf(0, s.chunks.wordsBefore[s.index] - s.spanFrom.second),
+            recallText = if (open) null else s.line.trim().ifEmpty { null },
+            selfRating = rating,
+        )
+    }
+
+    private fun finishCheckpoint(s: ReaderState, row: Effect.Checkpoint?): ReaderState {
+        val done = s.copy(overlay = null, pending = null, line = "", effects = listOfNotNull(row))
+        return when {
+            s.pending == "open" -> done.copy(overlay = if (s.settings.recap) Overlay.RECAP else null)
+            s.pending == "quit" -> done.copy(quit = true)
+            row == null -> done
+            else -> done.copy(spanFrom = s.active.sentenceId to s.chunks.wordsBefore[s.index])
+        }
+    }
+
+    private fun switch(on: Boolean) = if (on) "on" else "off"
 
     private fun arm(s: ReaderState, amount: Int, unit: GoalUnit): ReaderState = s.copy(
         goal = Goal(amount, unit, s.now, s.chunks.wordsBefore[s.index]),
@@ -252,6 +336,11 @@ object Reader {
     )
 
     private fun dispatch(s: ReaderState, action: Action): ReaderState {
+        if (action == Action.Quit) {
+            if (s.pending == "quit") return s.copy(quit = true) // a second Back skips the checkpoint
+            return quit(s.copy(overlay = null, pending = null, peek = false))
+        }
+        s.overlay?.let { return overlayAction(s, it, action) }
         // §17.3: the action that ends peek is consumed.
         if (s.peek) return s.copy(peek = false)
         val last = s.chunks.spans.size - 1
@@ -280,8 +369,16 @@ object Reader {
             Action.GoalOff -> s.copy(goal = null, message = "goal off")
             Action.GoalAgain -> s.lastGoal?.let { (amount, unit) -> arm(s, amount, unit) }
                 ?: s.copy(message = "no goal to re-arm")
-            is Action.SetRecap, is Action.SetRecall, Action.Continue, is Action.SubmitRecall,
-            Action.SkipRecall, is Action.Rate, Action.Quit -> TODO()
+            is Action.SetRecap -> s.copy(
+                settings = s.settings.copy(recap = action.on),
+                effects = listOf(Effect.SaveSetting("recap", switch(action.on))),
+            )
+            is Action.SetRecall -> s.copy(
+                settings = s.settings.copy(recall = action.on),
+                effects = listOf(Effect.SaveSetting("recall", switch(action.on))),
+            )
+            // Card actions outside a card, and Quit, handled above.
+            Action.Continue, is Action.SubmitRecall, Action.SkipRecall, is Action.Rate, Action.Quit -> s
             is Action.SetMode -> reassemble(
                 s, s.settings.copy(mode = action.mode), Effect.SaveSetting("mode", action.mode.storage),
             )

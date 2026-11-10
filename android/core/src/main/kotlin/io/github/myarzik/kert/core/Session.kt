@@ -44,7 +44,12 @@ class ReadingSession private constructor(
                     now, effect.sentenceId, effect.chunkWords, effect.direction,
                     effect.kind, state.settings.mode.storage,
                 )
-                is Effect.Checkpoint -> TODO()
+                is Effect.Checkpoint -> db.execute(
+                    "INSERT INTO checkpoints (ts, trigger, mode, span_start_sentence, span_end_sentence, " +
+                        "span_words, recall_text, self_rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    now, effect.trigger, effect.mode, effect.spanStartSentence, effect.spanEndSentence,
+                    effect.spanWords, effect.recallText, effect.selfRating,
+                )
                 is Effect.SaveSetting -> {
                     saveState(db, effect.key, effect.value)
                     // §17.2: the mode is an experimental condition, kept per book only.
@@ -96,8 +101,8 @@ class ReadingSession private constructor(
                 val position = loadState(db, "position")?.let { raw ->
                     POSITION.find(raw)?.destructured?.let { (sid, token) -> Position(sid.toLong(), token.toInt()) }
                 } ?: Position(book.sentences.firstOrNull()?.id ?: 0, 0)
-                val initial = Reader.initial(book, settings, position).copy(log = recentAdvances(db))
-                ReadingSession(db, defaults, clock, initial)
+                val initial = Reader.initial(book, settings, position, now = clock(), log = recentAdvances(db))
+                ReadingSession(db, defaults, clock, Reader.start(initial))
             } catch (e: Exception) {
                 db.close()
                 throw e
@@ -113,7 +118,22 @@ class ReadingSession private constructor(
                 ?: defaults.theme
                 ?: fallback.theme
             val mode = loadState(db, "mode")?.let { v -> Mode.entries.find { it.storage == v } } ?: Mode.CHUNK
-            return Settings(width, theme, mode)
+            // §17.10: no app UI sets recap_words or recall_gap_minutes; a desktop-set book value applies.
+            return Settings(
+                width, theme, mode,
+                recap = switch(loadState(db, "recap")) ?: defaults.recap ?: fallback.recap,
+                recapWords = loadState(db, "recap_words")?.toIntOrNull()?.takeIf { it in 10..120 }
+                    ?: fallback.recapWords,
+                recall = switch(loadState(db, "recall")) ?: defaults.recall ?: fallback.recall,
+                recallGapMinutes = loadState(db, "recall_gap_minutes")?.toIntOrNull()?.takeIf { it in 5..1440 }
+                    ?: fallback.recallGapMinutes,
+            )
+        }
+
+        private fun switch(value: String?): Boolean? = when (value) {
+            "on" -> true
+            "off" -> false
+            else -> null
         }
 
         /** The newest advance_log rows, oldest first (§17.6). */

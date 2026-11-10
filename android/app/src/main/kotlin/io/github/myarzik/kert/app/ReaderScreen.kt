@@ -88,7 +88,10 @@ fun ReaderScreen(
     host: ReaderHost,
     onBack: () -> Unit,
 ) {
-    val fallback = Settings(chunkWidth = 8, theme = if (systemDark) Theme.DARK else Theme.LIGHT)
+    // Recap and recall stay off until the app shows their cards (§17.12 task 39).
+    val fallback = Settings(
+        chunkWidth = 8, theme = if (systemDark) Theme.DARK else Theme.LIGHT, recap = false, recall = false,
+    )
     val controller = remember(entry.file) { ReaderController(entry.file.toFile(), defaults, fallback) }
     val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf<ReaderState?>(null) }
