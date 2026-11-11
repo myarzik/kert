@@ -20,7 +20,7 @@ first, for example `pandoc book.docx -t markdown -o book.md`.
 
 An Android reader (Kotlin, Jetpack Compose) for `.kert` files lives in
 [`android/`](android/). It reads books compiled on the desktop; it cannot
-compile. It is in early testing.
+compile. It is in early testing; see [Android reader](#android-reader).
 
 ## Download a prebuilt build
 
@@ -224,6 +224,49 @@ as the control condition for the validation protocol below.
 - At least 40 columns are needed; a narrower window shows a notice until you
   resize it. Resizing takes effect on the next key press.
 
+## Android reader
+
+The Android app (Android 8.0+, the APK from a release) reads `.kert` files
+compiled on the desktop.
+
+**Adding books.** Tap **+** in the library and pick a `.kert` file, or open or
+share one from another app. The app reads its own copy, so the reading
+position and settings are kept in that copy, not in the original file.
+
+**Reading.**
+
+| Gesture | Action |
+|---|---|
+| Tap the right two thirds, volume down | next fragment (sentence or paragraph in those modes) |
+| Tap the left third, volume up | previous fragment |
+| Swipe up / down | next / previous paragraph |
+| Swipe left / right | next / previous sentence, like `)` / `(` |
+| Press and hold | peek at the previous fragment while held, like `p` |
+| Tap the top edge | open or close the settings panel |
+| Back | leave the book; after 500+ words it first offers the recall line |
+
+The panel has a go-to slider, the reading mode, the width (5–12), the theme,
+a goal (10, 15 or 30 minutes, `off`, `again`) and the Recap and Recall
+switches. The status line shows messages on the left and the goal segment and
+the percentage on the right.
+
+Goals, recap and recall work as on the desktop (see
+[Goals, recap and recall](#goals-recap-and-recall)), on full-screen cards:
+*Tap to continue* for the recall question and the recap; *Recalled*,
+*Partial*, *Blank* or *Skip* for the rating; a one-line field with *Submit*
+and *Skip* for the written recall. The recap also appears when you return to
+the app from the background.
+
+**Settings.** The book's own value comes first, then the app's defaults, then
+the built-in ones (width 8; the theme follows the system until you pick one).
+A change in the panel writes both the book and the app defaults; the mode is
+kept per book only. `recap_words` and `recall_gap_minutes` have no control on
+the phone: a value the desktop saved in the book applies. There is no
+`default_goal`.
+
+The app writes `advance_log` and `checkpoints` like the desktop reader, so a
+book read on the phone also counts for the validation protocol below.
+
 ## Validation protocol
 
 kert records what the spec's validation gate (§17.9) needs to answer "does
@@ -369,3 +412,24 @@ emulator**, with both `:set theme=dark` and `:set theme=light`:
 - [ ] `:goal 1m` shows the goal segment and reports the goal; the recall line
       accepts typing, both Backspace codes and paste.
 - [ ] Typing a Cyrillic recall line works in Windows Terminal.
+
+### Android
+
+On one Android 8.0+ phone, with both themes:
+
+- [ ] The release APK installs; a `.kert` file is added with **+** and with
+      *Open with* from a file manager.
+- [ ] Taps, volume keys and vertical swipes move as documented; the active
+      fragment stays on the vertical center and clearly stands out from the
+      rest of its paragraph.
+- [ ] Horizontal swipes move by sentence; press and hold shows the previous
+      fragment, and releasing returns to the real one.
+- [ ] The panel's modes highlight and step by sentence and paragraph; a width
+      change keeps the reading position and the percentage.
+- [ ] A 10-minute goal shows the goal segment; reaching it shows
+      "goal reached" above the recall line, and a Cyrillic line typed with
+      the phone keyboard is accepted.
+- [ ] Reopening a book mid-way shows the recap card; after a break of an hour
+      or more, the recall card, the rating and then the recap.
+- [ ] Back after 500+ words offers the recall line; a second Back leaves.
+      Reopening shows the same fragment.
