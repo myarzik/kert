@@ -297,3 +297,7 @@ private fun Panel(state: ReaderState, palette: Palette, dispatch: (Action) -> Un
         }
     }
 }
+
+/** Full-screen re-entry and checkpoint cards (§17.7, §17.8, §17.12). */
+@Composable
+internal fun ReaderCard(state: ReaderState, recap: String?, dispatch: (Action) -> Unit): Unit = TODO()

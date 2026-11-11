@@ -4,6 +4,7 @@ import io.github.myarzik.kert.core.ReaderTest.Companion.W5
 import io.github.myarzik.kert.core.ReaderTest.Companion.miniBook
 import java.nio.file.Path
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -29,6 +30,21 @@ class BookLayoutTest {
             layout.blocks.map { it.text },
         )
         assertEquals(listOf(1L, 2L, 3L), layout.blocks.map { it.id })
+    }
+
+    @Test
+    fun `recap text is the whole units before the active one, block by block`() {
+        // §17.7: at W=5 unit 4 is S4[0,5); 10 words back reach unit 1 (2 + 4 + 5 = 11).
+        val ten = Reader.initial(miniBook(), W5.copy(recapWords = 10), Position(4, 0))
+        assertEquals("alpha bravo charlie delta echo foxtrot golf hotel india. Short one.", layout.recap(ten))
+        val all = Reader.initial(miniBook(), W5, Position(4, 0))
+        assertEquals(
+            "Глава один.\n\nalpha bravo charlie delta echo foxtrot golf hotel india. Short one.",
+            layout.recap(all),
+        )
+        val one = Reader.initial(miniBook(), W5.copy(recapWords = 1), Position(2, 5))
+        assertEquals("alpha bravo charlie delta echo", layout.recap(one))
+        assertNull(layout.recap(at(Position(1, 0))))
     }
 
     @Test

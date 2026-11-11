@@ -44,6 +44,9 @@ class BookLayout(book: BookContent) {
         val end = placement.getValue(last.id).second + last.tokens[endToken - 1].end
         return block to (start until end)
     }
+
+    /** The recap frame's text (§17.7): its blocks' parts joined by a blank line; null at the book start. */
+    fun recap(state: ReaderState): String? = TODO()
 }
 
 object Centering {
