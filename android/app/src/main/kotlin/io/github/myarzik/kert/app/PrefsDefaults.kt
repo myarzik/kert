@@ -16,5 +16,15 @@ class PrefsDefaults(context: Context) : SettingsDefaults {
     override val theme: Theme?
         get() = prefs.getString("theme", null)?.let { v -> Theme.entries.find { it.storage == v } }
 
+    override val recap: Boolean? get() = switch("recap")
+
+    override val recall: Boolean? get() = switch("recall")
+
+    private fun switch(key: String): Boolean? = when (prefs.getString(key, null)) {
+        "on" -> true
+        "off" -> false
+        else -> null
+    }
+
     override fun save(key: String, value: String) = prefs.edit().putString(key, value).apply()
 }

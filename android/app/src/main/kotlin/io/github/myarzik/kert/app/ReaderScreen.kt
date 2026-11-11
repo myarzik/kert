@@ -3,6 +3,8 @@ package io.github.myarzik.kert.app
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -18,7 +20,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,7 +61,10 @@ import io.github.myarzik.kert.core.Action
 import io.github.myarzik.kert.core.BlockView
 import io.github.myarzik.kert.core.BookLayout
 import io.github.myarzik.kert.core.Centering
+import io.github.myarzik.kert.core.GoalUnit
 import io.github.myarzik.kert.core.LibraryEntry
+import io.github.myarzik.kert.core.Mode
+import io.github.myarzik.kert.core.Overlay
 import io.github.myarzik.kert.core.Palettes
 import io.github.myarzik.kert.core.Reader
 import io.github.myarzik.kert.core.ReaderState
@@ -88,17 +96,22 @@ fun ReaderScreen(
     host: ReaderHost,
     onBack: () -> Unit,
 ) {
-    // Recap and recall stay off until the app shows their cards (§17.12 task 39).
-    val fallback = Settings(
-        chunkWidth = 8, theme = if (systemDark) Theme.DARK else Theme.LIGHT, recap = false, recall = false,
-    )
+    val fallback = Settings(chunkWidth = 8, theme = if (systemDark) Theme.DARK else Theme.LIGHT)
     val controller = remember(entry.file) { ReaderController(entry.file.toFile(), defaults, fallback) }
     val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf<ReaderState?>(null) }
     var layout by remember { mutableStateOf<BookLayout?>(null) }
     var panel by remember { mutableStateOf(false) }
 
-    fun dispatch(action: Action) = scope.launch { controller.dispatch(action)?.let { state = it } }
+    fun dispatch(action: Action) = scope.launch {
+        val next = controller.dispatch(action)
+        if (next != null) state = next
+        // Quit ends here at once or after its checkpoint card (§17.8); a closed session just leaves.
+        if (next?.quit ?: (action == Action.Quit)) {
+            controller.close()
+            onBack()
+        }
+    }
 
     LaunchedEffect(entry.file) {
         val opened = controller.open()
@@ -125,12 +138,7 @@ fun ReaderScreen(
             controller.release()
         }
     }
-    BackHandler {
-        scope.launch {
-            controller.close()
-            onBack()
-        }
-    }
+    BackHandler { dispatch(Action.Quit) }
 
     val current = state
     val book = layout
@@ -144,15 +152,27 @@ fun ReaderScreen(
                 Zone.LEFT -> dispatch(Action.Previous)
                 Zone.RIGHT -> dispatch(Action.Next)
             }
-        }, onSwipe = { up -> dispatch(if (up) Action.NextBlock else Action.PreviousBlock) })
-
-        Text(
-            percentText(current),
-            color = palette.rest,
-            fontSize = 13.sp,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).testTag("status"),
+        },
+            onSwipe = { up -> dispatch(if (up) Action.NextBlock else Action.PreviousBlock) },
+            onSentence = { forward -> dispatch(if (forward) Action.NextSentence else Action.PreviousSentence) },
+            onPeek = { held -> dispatch(if (held) Action.PeekStart else Action.PeekEnd) },
         )
+
+        StatusLine(current, palette, Modifier.align(Alignment.BottomCenter))
         if (panel) Panel(current, palette, ::dispatch)
+        if (current.overlay != null) ReaderCard(current, book.recap(current), ::dispatch)
+    }
+}
+
+/** Message on the left; the goal segment and the percent on the right (§7.1, §17.6). */
+@Composable
+private fun StatusLine(state: ReaderState, palette: Palette, modifier: Modifier) {
+    Row(modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(state.message.orEmpty(), color = palette.rest, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Reader.goalSegment(state)?.let {
+            Text(it, color = palette.rest, fontSize = 13.sp, modifier = Modifier.padding(end = 12.dp).testTag("goal"))
+        }
+        Text(percentText(state), color = palette.rest, fontSize = 13.sp, modifier = Modifier.testTag("status"))
     }
 }
 
@@ -165,6 +185,8 @@ private fun Tape(
     palette: Palette,
     onTap: (Zone) -> Unit,
     onSwipe: (up: Boolean) -> Unit,
+    onSentence: (forward: Boolean) -> Unit,
+    onPeek: (held: Boolean) -> Unit,
 ) {
     val (activeBlock, range) = layout.active(state)
     val activeText = layout.blocks[activeBlock].text.substring(range.first, range.last + 1)
@@ -180,7 +202,19 @@ private fun Tape(
             .testTag("reader")
             .semantics { stateDescription = activeText }
             .pointerInput(Unit) {
-                detectTapGestures { offset ->
+                var peeking = false
+                detectTapGestures(
+                    // Hold to peek (§17.12): one PeekStart per hold, PeekEnd on release.
+                    onPress = {
+                        peeking = false
+                        tryAwaitRelease()
+                        if (peeking) onPeek(false)
+                    },
+                    onLongPress = {
+                        peeking = true
+                        onPeek(true)
+                    },
+                ) { offset ->
                     onTap(
                         when {
                             offset.y < topEdge -> Zone.TOP
@@ -189,6 +223,14 @@ private fun Tape(
                         },
                     )
                 }
+            }
+            .pointerInput(Unit) {
+                var travel = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { travel = 0f },
+                    // The finger moving right goes back (§17.12).
+                    onDragEnd = { if (abs(travel) > swipeThreshold) onSentence(travel < 0) },
+                ) { _, dx -> travel += dx }
             }
             .pointerInput(Unit) {
                 var travel = 0f
@@ -254,7 +296,7 @@ private fun blockText(block: BlockView, active: IntRange?, palette: Palette): An
         }
     }
 
-/** Top panel: percent, goto, width and theme (§16.5). */
+/** Top panel: goto, mode, width, theme, goal and the recap and recall switches (§16.5, §17.12). */
 @Composable
 private fun Panel(state: ReaderState, palette: Palette, dispatch: (Action) -> Unit) {
     var goto by remember(state.index) { mutableFloatStateOf(state.percent.toFloat()) }
@@ -278,26 +320,96 @@ private fun Panel(state: ReaderState, palette: Palette, dispatch: (Action) -> Un
                 Text("+")
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            for (theme in Theme.entries) {
-                val label = if (theme == Theme.DARK) "Dark" else "Light"
-                Text(
-                    label,
-                    color = if (state.settings.theme == theme) palette.active else palette.rest,
-                    fontWeight = if (state.settings.theme == theme) FontWeight.Bold else FontWeight.Normal,
-                    modifier = Modifier
-                        .selectable(
-                            selected = state.settings.theme == theme,
-                            onClick = { dispatch(Action.SetTheme(theme)) },
-                            role = Role.RadioButton,
-                        )
-                        .padding(vertical = 8.dp),
-                )
+        Choices(Mode.entries, state.settings.mode, palette, { it.storage.replaceFirstChar(Char::uppercase) }) {
+            dispatch(Action.SetMode(it))
+        }
+        Choices(Theme.entries, state.settings.theme, palette, { if (it == Theme.DARK) "Dark" else "Light" }) {
+            dispatch(Action.SetTheme(it))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Goal", color = palette.active, modifier = Modifier.weight(1f))
+            for (minutes in listOf(10, 15, 30)) {
+                TextButton(onClick = { dispatch(Action.SetGoal(minutes, GoalUnit.MINUTES)) }) { Text("${minutes}m") }
             }
+            TextButton(onClick = { dispatch(Action.GoalOff) }) { Text("off") }
+            TextButton(onClick = { dispatch(Action.GoalAgain) }) { Text("again") }
+        }
+        Toggle("Recap", state.settings.recap, palette) { dispatch(Action.SetRecap(it)) }
+        Toggle("Recall", state.settings.recall, palette) { dispatch(Action.SetRecall(it)) }
+    }
+}
+
+@Composable
+private fun <T> Choices(options: List<T>, selected: T, palette: Palette, label: (T) -> String, choose: (T) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        for (option in options) {
+            Text(
+                label(option),
+                color = if (option == selected) palette.active else palette.rest,
+                fontWeight = if (option == selected) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier
+                    .selectable(selected = option == selected, onClick = { choose(option) }, role = Role.RadioButton)
+                    .padding(vertical = 8.dp),
+            )
         }
     }
 }
 
-/** Full-screen re-entry and checkpoint cards (§17.7, §17.8, §17.12). */
 @Composable
-internal fun ReaderCard(state: ReaderState, recap: String?, dispatch: (Action) -> Unit): Unit = TODO()
+private fun Toggle(label: String, on: Boolean, palette: Palette, set: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(value = on, role = Role.Switch, onValueChange = set),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = palette.active, modifier = Modifier.weight(1f))
+        Switch(checked = on, onCheckedChange = null)
+    }
+}
+
+/** Full-screen re-entry and checkpoint cards (§17.7, §17.8, §17.12); taps never reach the tape. */
+@Composable
+internal fun ReaderCard(state: ReaderState, recap: String?, dispatch: (Action) -> Unit) {
+    val overlay = state.overlay ?: return
+    val palette = state.settings.theme.palette()
+    val tapToContinue = overlay == Overlay.RECALL || overlay == Overlay.RECAP
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(palette.background)
+            .then(
+                if (tapToContinue) Modifier.clickable { dispatch(Action.Continue) }
+                else Modifier.pointerInput(Unit) { detectTapGestures { } },
+            )
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+    ) {
+        state.message?.let { Text(it, color = palette.rest, fontSize = 13.sp) }
+        when (overlay) {
+            Overlay.RECALL -> Text("What was happening?", color = palette.active, fontSize = 22.sp)
+            Overlay.RECAP -> Text(recap.orEmpty(), color = palette.rest, style = blockStyle(BlockView(0, "paragraph", "")))
+            Overlay.LINE -> {
+                var text by remember { mutableStateOf("") }
+                OutlinedTextField(
+                    text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    label = { Text("Recall in one line") },
+                    modifier = Modifier.fillMaxWidth().testTag("recall-line"),
+                )
+                Row {
+                    TextButton(onClick = { dispatch(Action.SubmitRecall(text)) }) { Text("Submit") }
+                    TextButton(onClick = { dispatch(Action.SkipRecall) }) { Text("Skip") }
+                }
+            }
+            Overlay.RATING -> {
+                Text("How much did you recall?", color = palette.active, fontSize = 22.sp)
+                Row {
+                    for ((label, rating) in listOf("Recalled" to 2, "Partial" to 1, "Blank" to 0, "Skip" to null)) {
+                        TextButton(onClick = { dispatch(Action.Rate(rating)) }) { Text(label) }
+                    }
+                }
+            }
+        }
+        if (tapToContinue) Text("Tap to continue", color = palette.rest, fontSize = 13.sp)
+    }
+}

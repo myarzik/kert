@@ -34,8 +34,21 @@ class BookLayout(book: BookContent) {
      * The active unit (the peeked one while peeking, §17.3): its block index and
      * UTF-16 range in that block's text. A unit may span several sentences (§17.2).
      */
-    fun active(state: ReaderState): Pair<Int, IntRange> {
-        val index = if (state.peek) state.index - 1 else state.index
+    fun active(state: ReaderState): Pair<Int, IntRange> = unit(state, if (state.peek) state.index - 1 else state.index)
+
+    /** The recap frame's text (§17.7): its blocks' parts joined by a blank line; null at the book start. */
+    fun recap(state: ReaderState): String? {
+        val start = Reader.recapStart(state) ?: return null
+        val parts = LinkedHashMap<Int, IntRange>() // block index -> the recap's part of its text
+        for (i in start until state.index) {
+            val (block, range) = unit(state, i)
+            parts[block] = parts[block]?.let { it.first..range.last } ?: range
+        }
+        return parts.entries.joinToString("\n\n") { (block, range) -> blocks[block].text.substring(range.first, range.last + 1) }
+    }
+
+    /** Unit [index]: its block index and UTF-16 range in that block's text. */
+    private fun unit(state: ReaderState, index: Int): Pair<Int, IntRange> {
         val span = state.chunks.spans[index]
         val (block, offset) = placement.getValue(span.sentenceId)
         val start = offset + sentences.getValue(span.sentenceId).tokens[span.startToken].start
@@ -44,9 +57,6 @@ class BookLayout(book: BookContent) {
         val end = placement.getValue(last.id).second + last.tokens[endToken - 1].end
         return block to (start until end)
     }
-
-    /** The recap frame's text (§17.7): its blocks' parts joined by a blank line; null at the book start. */
-    fun recap(state: ReaderState): String? = TODO()
 }
 
 object Centering {

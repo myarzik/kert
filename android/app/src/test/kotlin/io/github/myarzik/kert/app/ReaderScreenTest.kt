@@ -6,13 +6,14 @@ import android.net.Uri
 import android.view.KeyEvent
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isOff
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -192,7 +193,7 @@ class ReaderScreenTest {
     fun panelSetsModeGoalAndSwitches() = openBook { scenario ->
         openPanel()
         compose.onNodeWithText("Paragraph").performClick()
-        compose.onNodeWithText("Paragraph").assertIsSelected()
+        waitFor(hasText("Paragraph") and isSelected()) // settings apply on the session thread
         scenario.key(KeyEvent.KEYCODE_VOLUME_DOWN)
         waitForActive("Он вышел из дома, хотя шёл дождь. На улице было пусто.") // block 2 whole (§17.2)
 
@@ -204,9 +205,9 @@ class ReaderScreenTest {
 
         compose.onNodeWithText("Recap").assertIsOn()
         compose.onNodeWithText("Recap").performClick()
-        compose.onNodeWithText("Recap").assertIsOff()
+        waitFor(hasText("Recap") and isOff())
         compose.onNodeWithText("Recall").performClick()
-        compose.onNodeWithText("Recall").assertIsOff()
+        waitFor(hasText("Recall") and isOff())
     }
 
     private fun waitForGone(matcher: SemanticsMatcher) =
