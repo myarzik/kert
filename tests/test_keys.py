@@ -1,7 +1,11 @@
 """POSIX key parsing with an Esc timeout (spec §8.3 amendment)."""
 
 import pytest
-from readchar import key
+
+# parse_key reads POSIX terminals only (Windows uses readchar.readkey), so the
+# expected spellings are readchar's POSIX ones on every platform: readchar.key
+# holds the Windows codes on Windows ("\x00H", "\r").
+from readchar import _posix_key as key
 
 from kert.reader.keys import ESC_TIMEOUT, parse_key
 
